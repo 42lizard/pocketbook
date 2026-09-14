@@ -1,0 +1,5 @@
+<RCC><qresource prefix="/pocketbook-simulator">
+<file alias="DeviceOverlay.qml">qml/DeviceOverlay.qml</file>
+<file alias="Button.qml">qml/Button.qml</file>
+<file alias="Label.qml">qml/Label.qml</file>
+</qresource></RCC>

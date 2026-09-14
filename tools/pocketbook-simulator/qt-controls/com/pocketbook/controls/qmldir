@@ -1,0 +1,6 @@
+module com.pocketbook.controls
+AppHeader 2.0 AppHeader.qml
+TextButton 2.0 TextButton.qml
+FramedTextInput 2.0 FramedTextInput.qml
+StyledText 2.0 StyledText.qml
+FontStyles 2.0 FontStyles.qml

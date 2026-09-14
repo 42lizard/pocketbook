@@ -1,0 +1,11 @@
+# Shared by every Qt app. The builder image contains the pinned upstream SDK.
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(NOT DEFINED POCKETBOOK_QT_SDK)
+  set(POCKETBOOK_QT_SDK "$ENV{POCKETBOOK_QT_SDK}")
+endif()
+if(NOT EXISTS "${POCKETBOOK_QT_SDK}/CMakeLists.txt")
+  message(FATAL_ERROR "Build inside docker compose run --rm qt6 (PocketBook Qt6 SDK missing)")
+endif()
+set(POCKETBOOK_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+add_subdirectory("${POCKETBOOK_QT_SDK}" "${CMAKE_BINARY_DIR}/sdk" EXCLUDE_FROM_ALL)

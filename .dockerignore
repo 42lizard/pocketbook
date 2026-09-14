@@ -1,0 +1,6 @@
+**
+!Dockerfile
+!Dockerfile.qt6
+!tools/
+!tools/pocketbook-simulator/
+!tools/pocketbook-simulator/Dockerfile

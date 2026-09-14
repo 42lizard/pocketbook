@@ -1,0 +1,33 @@
+services:
+  simulator:
+    init: true
+    environment:
+      SIMULATOR_APP: ${SIMULATOR_APP:-readest-sync}
+    build:
+      context: .
+      dockerfile: tools/pocketbook-simulator/Dockerfile
+    working_dir: /workspace
+    ports:
+      - "127.0.0.1:6080:6080"
+    volumes:
+      - .:/workspace
+      - simulator-data:/simulator-data
+  sdk:
+    build: .
+    platform: linux/amd64
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: ["make"]
+
+  qt6:
+    build:
+      context: .
+      dockerfile: Dockerfile.qt6
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: ["make"]
+
+volumes:
+  simulator-data:
