@@ -1,6 +1,7 @@
 // Link the production controller/model/runner normally; test public contracts.
 #include "controller.h"
 #include "cover_provider.h"
+#include "network_route.h"
 #include <QTemporaryDir>
 #include <QElapsedTimer>
 #include <QThread>
@@ -48,6 +49,16 @@ static ApplicationConfig configAt(const QString& base) {
     return config;
 }
 static void runnerChecks() {
+    for(const auto& row : {"", "Iface Destination Gateway Flags RefCnt Use Metric Mask",
+            "wlan0 0010A8C0 00000000 0001 0 0 0 00FFFFFF",
+            "wlan0 00000000 0100A8C0 0000 0 0 0 00000000",
+            "wlan0 00000000 0100A8C0 0201 0 0 0 00000000",
+            "lo 00000000 00000000 0001 0 0 0 00000000"}) {
+        std::istringstream routes(row); assert(!has_default_route(routes));
+    }
+    std::istringstream routes("Iface Destination Gateway Flags RefCnt Use Metric Mask\n"
+        "wlan0 00000000 0100A8C0 0003 0 0 600 00000000\n");
+    assert(has_default_route(routes));
     DeviceAccess device;
     std::function<void(int)> pending;
     device.connect=[&](std::function<void(int)> callback) { if(pending) return false; pending=std::move(callback); return true; };
@@ -71,6 +82,18 @@ static void runnerChecks() {
         runner.cancel(); settle(250); assert(worked==1 && completed==3);
     }
     late=std::move(pending); pending=nullptr; late(0);
+    {
+        device.connectionTimeoutMs=2000;
+        OperationRunner runner(device);
+        assert(runner.start(task,true,[](OperationResult r) { assert(r.outcome==Outcome::Cancelled); },[](bool) {}));
+        runner.cancel(); settle(250);
+        // A foreground sync takes over a cancelled cover connection, without
+        // losing its work or issuing another firmware connection request.
+        bool synced=false;
+        assert(runner.start(task,true,[&](OperationResult r) { assert(r.outcome==Outcome::Ready); synced=true; },[](bool) {}));
+        auto connected=std::move(pending); pending=nullptr; connected(0);
+        settle(500); assert(synced && worked==2);
+    }
     std::atomic<bool> stopped{false};
     {
         OperationRunner runner(device);
@@ -85,6 +108,32 @@ static void runnerChecks() {
         runner.start([](const std::atomic<bool>&)->OperationResult { throw std::runtime_error("fixture error"); },false,
             [&](OperationResult r) { assert(r.outcome==Outcome::Failed && r.error=="fixture error"); ++completed; },[](bool) {});
         settle(250); assert(completed==4);
+    }
+    {
+        bool ready=true; int connections=0,executions=0;
+        device.networkReady=[&] { return ready; };
+        device.connect=[&](std::function<void(int)> callback) {
+            ++connections; assert(!pending); pending=std::move(callback); return true;
+        };
+        OperationRunner runner(device);
+        auto work=[&](const std::atomic<bool>&) { ++executions; return OperationResult{}; };
+        auto finish=[](OperationResult r) { assert(r.outcome==Outcome::Ready); };
+        assert(runner.start(work,true,finish,[](bool connecting) { assert(!connecting); }));
+        settle(250); assert(executions==1 && connections==0);
+        ready=false;
+        assert(runner.start(work,true,finish,[](bool) {}));
+        settle(250); assert(runner.busy() && executions==1 && connections==1);
+        // The route appears, but the firmware never delivers its callback.
+        ready=true; settle(500); assert(!runner.busy() && executions==2 && pending);
+        assert(runner.start(work,true,finish,[](bool) {}));
+        settle(250); assert(executions==3 && connections==1);
+        auto late_reply=std::move(pending); pending=nullptr; late_reply(-1);
+        assert(executions==3); // A late error must not undo completed work.
+        ready=false;
+        assert(runner.start(work,true,finish,[](bool) {}));
+        assert(connections==2);
+        auto reply=std::move(pending); pending=nullptr; reply(0);
+        settle(500); assert(executions==4);
     }
 }
 int main(int argc,char** argv) {

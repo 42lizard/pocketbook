@@ -118,6 +118,7 @@ QString nativeDatabase() { return storage()+"/system/explorer-3/explorer-3.db"; 
 std::vector<std::string> bookRoots() { return {storage().toStdString()}; }
 void connectNetwork(int (*callback)(int)) { simulator->connectNetwork(callback); }
 void pingNetwork() {}
+bool networkReady() { return false; } // Connection modes exercise the callback path.
 bool openBook(const QString& path) { return simulator && simulator->open(path); }
 QImage localCover(const QString&,const QSize&) { return {}; }
 }

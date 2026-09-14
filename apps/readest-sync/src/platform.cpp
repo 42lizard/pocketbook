@@ -1,4 +1,6 @@
 #include "platform.h"
+#include "network_route.h"
+#include <fstream>
 #include <cstdlib>
 // Keep the legacy global macros out of the Qt controller and renderer.
 #include <inkview.h>
@@ -12,6 +14,11 @@ QString nativeDatabase() { return QStringLiteral("/mnt/ext1/system/explorer-3/ex
 std::vector<std::string> bookRoots() { return {"/mnt/ext1", "/mnt/ext2"}; }
 void connectNetwork(int (*callback)(int)) { NetConnectAsync(callback); }
 void pingNetwork() { NetMgrPing(); }
+bool networkReady() {
+    if(!(QueryNetwork()&NET_CONNECTED)) return false;
+    std::ifstream routes("/proc/net/route");
+    return readest::has_default_route(routes);
+}
 bool openBook(const QString& path) { return OpenBook(path.toUtf8().constData(),nullptr,0)!=0; }
 QImage localCover(const QString& path,const QSize& size) {
     auto* bitmap=GetBookCover(path.toUtf8().constData(),size.width(),size.height());

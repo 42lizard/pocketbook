@@ -33,9 +33,17 @@ and library snapshots. A book request is validated against its signed-in account
 `OperationRunner` runs one operation at a time, joins it before publishing its
 result, and owns cancellation, network timeout and keepalive timing. Device
 connection callbacks retain their own lifetime token: a late callback cannot
-access a destroyed runner, and a pending firmware connection blocks another
-connection attempt. Cloud and app-state access stays inside service operations;
+access a destroyed runner. A foreground operation can take over the pending
+connection of a cancelled cover request, retaining its original timeout instead
+of starting a competing connection. Cloud and app-state access stays inside service operations;
 the UI only sees completed snapshots. Shutdown cancels and joins outstanding work.
+
+Before requesting a firmware connection, the device adapter checks the connection
+flag and an active IPv4 default route. Existing connections can serve consecutive
+sync and cover requests without another handshake. The runner also checks for a
+route while awaiting the firmware callback, so a missing callback does not block
+a connection that became available. This is a link/routing check; DNS and HTTPS
+failures still surface through the transfer's own timeouts and error handling.
 
 The device adapter supplies paths, Wi-Fi, reader handoff and local cover access.
 Native handoff runs on the UI thread after a successful operation. Local cover

@@ -13,15 +13,29 @@ bool OperationRunner::start(Task task,bool online,Completion complete,std::funct
     task_=std::move(task); complete_=std::move(complete); phase_=std::move(phase);
     result_={}; cancelled_=false; done_=false; busy_=true; online_=online; connecting_=online;
     if(online) {
-        connection_=std::make_shared<Connection>();
-        auto token=connection_;
-        if(!device_.connect([token](int result) { token->result=result; token->done=true; })) {
+        if(connection_ && connection_->done) connection_.reset();
+        next_ping_=Clock::now()+std::chrono::milliseconds(device_.keepaliveMs);
+        device_.ping();
+        if(device_.networkReady && device_.networkReady()) {
+            connecting_=false; phase_(false); launch(); timer_.start(200); return true;
+        }
+        phase_(true);
+        // Cancelling a cover request cannot cancel the firmware's connection.
+        // Its successor waits for that same callback instead of starting a
+        // second connection (which the device adapter would reject).
+        if(!connection_) {
+            connection_=std::make_shared<Connection>();
+            auto token=connection_;
+            if(!device_.connect([token](int result) { token->result=result; token->done=true; })) {
+                connection_.reset();
+                busy_=false; connecting_=false; task_=nullptr; complete_=nullptr; phase_=nullptr;
+                return false;
+            }
+            deadline_=Clock::now()+std::chrono::milliseconds(device_.connectionTimeoutMs);
+        } else if(!connection_->done && Clock::now()>=deadline_) {
             busy_=false; connecting_=false; task_=nullptr; complete_=nullptr; phase_=nullptr;
             return false;
         }
-        deadline_=Clock::now()+std::chrono::milliseconds(device_.connectionTimeoutMs);
-        next_ping_=Clock::now()+std::chrono::milliseconds(device_.keepaliveMs);
-        device_.ping(); phase_(true);
     } else { phase_(false); launch(); }
     timer_.start(200); return true;
 }
@@ -40,16 +54,26 @@ void OperationRunner::launch() {
 void OperationRunner::poll() {
     if(!busy_) return;
     if(connecting_) {
-        if(cancelled_ || Clock::now()>=deadline_) {
-            result_.outcome=cancelled_?Outcome::Cancelled:Outcome::Failed;
-            result_.error=cancelled_?"Cancelled.":"Wi-Fi connection timed out. Try again or use Read offline.";
+        if(cancelled_) {
+            result_.outcome=Outcome::Cancelled; result_.error="Cancelled.";
+            task_=nullptr; connecting_=false; done_=true;
+        } else if(device_.networkReady && device_.networkReady()) {
+            // Some firmware connection attempts establish Wi-Fi without
+            // delivering a callback. Keep its token alive for a late reply,
+            // but do not hold up the actual request once the route is ready.
+            connecting_=false; phase_(false); launch();
+        } else if(!connection_->done && Clock::now()>=deadline_) {
+            result_.outcome=Outcome::Failed;
+            result_.error="Wi-Fi connection timed out. Check Wi-Fi in PocketBook settings, then retry or use Read offline.";
             task_=nullptr; connecting_=false; done_=true;
         } else if(connection_->done) {
             connecting_=false;
-            if(connection_->result==0) { phase_(false); launch(); }
+            const auto status=connection_->result.load();
+            connection_.reset();
+            if(status==0) { phase_(false); launch(); }
             else {
                 result_.outcome=Outcome::Failed;
-                result_.error="Wi-Fi connection failed (network "+std::to_string(connection_->result.load())+"). Try again or use Read offline.";
+                result_.error="Wi-Fi connection failed (network "+std::to_string(status)+"). Try again or use Read offline.";
                 task_=nullptr; done_=true;
             }
         }

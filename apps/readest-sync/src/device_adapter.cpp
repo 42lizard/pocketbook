@@ -35,6 +35,7 @@ DeviceAccess deviceAccess() {
         platform::connectNetwork(network_result); return true;
     };
     access.ping=[] { platform::pingNetwork(); };
+    access.networkReady=[] { return platform::networkReady(); };
     access.open=[](const QString& path) { return platform::openBook(path); };
     const auto root=platform::dataRoot().toStdString();
     access.prepareCover=[root](const readest::LibraryEntry& entry) -> QString {

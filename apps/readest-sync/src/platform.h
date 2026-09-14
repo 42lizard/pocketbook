@@ -14,6 +14,7 @@ QString nativeDatabase();
 std::vector<std::string> bookRoots();
 void connectNetwork(int (*callback)(int));
 void pingNetwork();
+bool networkReady();
 bool openBook(const QString& path);
 QImage localCover(const QString& path,const QSize& size);
 }

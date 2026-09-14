@@ -10,6 +10,7 @@ QString nativeDatabase() { return dataRoot()+"/../explorer-3/explorer-3.db"; }
 std::vector<std::string> bookRoots() { return {(dataRoot()+"/../..").toStdString()}; }
 void connectNetwork(int (*callback)(int)) { QTimer::singleShot(0,[callback] { callback(0); }); }
 void pingNetwork() {}
+bool networkReady() { return false; }
 bool openBook(const QString&) { return true; }
 QImage localCover(const QString&,const QSize&) { return {}; }
 }
