@@ -69,6 +69,12 @@ with tempfile.TemporaryDirectory(prefix='readest-integrity-') as folder:
                         else str(progress_binary) if value == str(download_binary) else value for value in download_command]
     subprocess.run(progress_command, check=True)
     subprocess.run([str(progress_binary), str(root), str(original)], check=True)
+    application_binary = root / 'application-check'
+    application_command = [str(APP / 'tests/application_test.cpp') if value == str(APP / 'tests/download_test.cpp')
+                           else str(application_binary) if value == str(download_binary) else value for value in download_command]
+    application_command += [str(APP / 'src/application.cpp'), str(APP / 'src/probe.cpp')]
+    subprocess.run(application_command, check=True)
+    subprocess.run([str(application_binary), str(root), str(original)], check=True)
     data = original.read_bytes()
     output = subprocess.check_output([str(binary), str(original)], text=True).splitlines()
     assert output == ['81fbcb860e2eed5d223c359063680f87', hashlib.sha256(data).hexdigest(), str(len(data))]

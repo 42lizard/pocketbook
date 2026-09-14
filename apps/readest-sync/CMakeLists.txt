@@ -37,7 +37,7 @@ if(READEST_SIMULATOR)
   set(HTTP_SOURCE "")
 endif()
 add_library(readest-core STATIC
-  src/cloud.cpp src/download.cpp ${HTTP_SOURCE} src/integrity.cpp src/library.cpp
+  src/application.cpp src/cloud.cpp src/download.cpp ${HTTP_SOURCE} src/integrity.cpp src/library.cpp
   src/position.cpp src/probe.cpp src/progress.cpp src/state.cpp src/sync.cpp
   src/vendor/miniz/miniz.c)
 target_compile_definitions(readest-core PUBLIC MINIZ_NO_DEFLATE_APIS MINIZ_NO_ZLIB_APIS)
