@@ -20,11 +20,14 @@ int main(int argc, char** argv) {
     assert(point_cfi(std::string(9000, 'x')).empty());
     if(argc==4 && std::string(argv[1])=="native-progress") {
         std::cout<<readest::native_position(argv[2],argv[3]).progress<<'\n';
-    } else if(argc==4 && std::string(argv[1])=="percentage") {
+    } else if(argc>=4 && std::string(argv[1])=="percentage") {
         try {
-            const auto values=readest::native_percentages(argv[2],{argv[3]});
-            const auto found=values.find(argv[3]);
-            std::cout<<(found==values.end()?-1:found->second)<<'\n';
+            const std::vector<std::string> paths(argv+3,argv+argc);
+            const auto values=readest::native_percentages(argv[2],paths);
+            for(const auto& path:paths) {
+                const auto found=values.find(path);
+                std::cout<<(found==values.end()?-1:found->second)<<'\n';
+            }
         } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
     } else if(argc==4 && std::string(argv[1])=="backup") {
         try { readest::backup_native_database(argv[2],argv[3]); }

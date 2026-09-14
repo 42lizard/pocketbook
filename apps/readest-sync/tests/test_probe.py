@@ -245,6 +245,26 @@ class ProbeTests(unittest.TestCase):
             db.execute('INSERT INTO books_settings SELECT bookid,2,position,position_ts,cpage,npage,completed FROM books_settings')
         self.assertEqual(percentage(), -1)
 
+    def test_percentages_stream_large_native_library(self):
+        paths = [BOOK] + [f'/mnt/ext1/Books/Readest/book-{i}.epub' for i in range(2, 302)]
+        with closing(sqlite3.connect(self.explorer)) as db, db:
+            for i, path in enumerate(paths[1:], 2):
+                db.execute('INSERT INTO files VALUES(?,1,1,?,?)', (i, Path(path).name, bytes.fromhex(HASH)))
+                db.execute('INSERT INTO books_settings VALUES(?,1,?,100,25,100,0)', (i, '#' + CFI))
+        before = self.explorer.read_bytes()
+        def percentages(requested):
+            output = subprocess.check_output([str(self.binary), 'percentage', str(self.explorer), *requested], text=True)
+            return [float(line) for line in output.splitlines()]
+        # Even one requested book must work with hundreds of unrelated rows.
+        self.assertEqual(percentages([BOOK]), [10])
+        self.assertEqual(percentages(paths), [10] + [25] * 300)
+        self.assertEqual(self.explorer.read_bytes(), before)
+        # Streaming must retain the existing identity/profile ambiguity rules.
+        with closing(sqlite3.connect(self.explorer)) as db, db:
+            db.execute('INSERT INTO books_settings SELECT bookid,2,position,position_ts,cpage,npage,completed FROM books_settings WHERE bookid=2')
+            db.execute('INSERT INTO files SELECT book_id,folder_id,storageid,filename,? FROM files WHERE book_id=3', (b'x' * 16,))
+        self.assertEqual(percentages(paths[:4]), [10, -1, -1, 25])
+
     def test_native_transactional_snapshot_includes_wal(self):
         with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('PRAGMA journal_mode=WAL')

@@ -13,6 +13,19 @@ RemoteProgress parse_progress(const std::string& response, const std::string& us
                                const std::string& hash);
 RemoteProgress fetch_progress(Cloud& cloud, const std::string& hash, long long now);
 enum class ProgressChoice { Automatic, PocketBook, Readest };
+// Operation-scoped proof of full EPUB validation, tied to an immutable book copy.
+// Construct afresh for each operation; never cache across reader handoffs.
+class VerifiedManagedBook {
+    ManagedBook book_;
+public:
+    explicit VerifiedManagedBook(const ManagedBook& book);
+    const ManagedBook& book() const { return book_; }
+};
+SyncAction sync_managed(Cloud& cloud, State& state, const VerifiedManagedBook& verified,
+                        const std::string& native_cfi, long long now,
+                        ProgressChoice choice = ProgressChoice::Automatic,
+                        long long displayed_revision = 0,
+                        const std::string& native_progress = "");
 // Runs on the sequential worker after a successful native position capture.
 // An empty native CFI means no saved position, never a failed capture.
 // Incoming positions are staged; only the explicit Open action may apply them.

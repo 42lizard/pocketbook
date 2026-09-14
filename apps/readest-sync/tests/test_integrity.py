@@ -73,6 +73,8 @@ with tempfile.TemporaryDirectory(prefix='readest-integrity-') as folder:
     application_command = [str(APP / 'tests/application_test.cpp') if value == str(APP / 'tests/download_test.cpp')
                            else str(application_binary) if value == str(download_binary) else value for value in download_command]
     application_command += [str(APP / 'src/application.cpp'), str(APP / 'src/probe.cpp')]
+    application_command = [str(APP / 'tests/counted_integrity.cpp') if value == str(APP / 'src/integrity.cpp')
+                           else value for value in application_command]
     subprocess.run(application_command, check=True)
     subprocess.run([str(application_binary), str(root), str(original)], check=True)
     scale_root = root / 'scale'

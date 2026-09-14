@@ -91,15 +91,25 @@ RemoteProgress fetch_progress(Cloud& cloud, const std::string& hash, long long n
     if(response.status!=200) throw std::runtime_error("Cannot fetch Readest reading progress");
     return parse_progress(response.body,cloud.session().user_id,hash);
 }
+VerifiedManagedBook::VerifiedManagedBook(const ManagedBook& book):book_(book) {
+    const auto bytes=inspect_epub(book_.path);
+    if(bytes.readest_hash!=book_.book.hash || bytes.sha256!=book_.sha256 || bytes.size!=book_.size)
+        throw std::runtime_error("Local book bytes changed; synchronization stopped");
+}
 SyncAction sync_managed(Cloud& cloud, State& state, const ManagedBook& book,
                         const std::string& local, long long now,
                         ProgressChoice choice, long long displayed_revision, const std::string& native_progress) {
     if(now<=0 || now>0x7fffffffffffffffLL/1000-1) throw std::runtime_error("Invalid device clock");
+    if(cloud.session().user_id.empty() || book.path.empty()) throw std::runtime_error("Download this book before syncing");
+    return sync_managed(cloud,state,VerifiedManagedBook(book),local,now,choice,displayed_revision,native_progress);
+}
+SyncAction sync_managed(Cloud& cloud, State& state, const VerifiedManagedBook& verified,
+                        const std::string& local, long long now,
+                        ProgressChoice choice, long long displayed_revision, const std::string& native_progress) {
+    const auto& book=verified.book();
+    if(now<=0 || now>0x7fffffffffffffffLL/1000-1) throw std::runtime_error("Invalid device clock");
     const auto user=cloud.session().user_id;
     if(user.empty() || book.path.empty()) throw std::runtime_error("Download this book before syncing");
-    const auto bytes=inspect_epub(book.path);
-    if(bytes.readest_hash!=book.book.hash || bytes.sha256!=book.sha256 || bytes.size!=book.size)
-        throw std::runtime_error("Local book bytes changed; synchronization stopped");
     auto saved=state.sync(user,book.book.hash);
     auto remote=fetch_progress(cloud,book.book.hash,now);
     if(remote.location.empty() && !remote.xpointer.empty()) {

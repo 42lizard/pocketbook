@@ -8,13 +8,6 @@
 #include <cstdio>
 
 namespace readest {
-namespace {
-void verify(const ManagedBook& book) {
-    const auto bytes=inspect_epub(book.path);
-    if(bytes.readest_hash!=book.book.hash || bytes.sha256!=book.sha256 || bytes.size!=book.size)
-        throw std::runtime_error("The local EPUB changed. Sync is stopped to protect reading progress.");
-}
-}
 ApplicationService::ApplicationService(ApplicationConfig config):config_(std::move(config)) {}
 void ApplicationService::trace(const char* phase) const {
     // Best-effort, bounded diagnostics. Only fixed phase names and process
@@ -91,12 +84,13 @@ LibrarySnapshot ApplicationService::snapshot() {
     trace("snapshot.end"); return result;
 }
 void ApplicationService::synchronize(const Request& request, OperationResult& result, const std::atomic<bool>& cancel) {
-    const auto book=resolve(request.book); verify(book);
+    const VerifiedManagedBook verified(resolve(request.book));
+    const auto& book=verified.book();
     const auto native=capture(book.path);
     const bool open=request.command==Command::Open;
     bool synced=true;
     try {
-        result.sync_action=sync_managed(*cloud_,*state_,book,native.cfi,time(nullptr),request.choice,request.revision,native.progress);
+        result.sync_action=sync_managed(*cloud_,*state_,verified,native.cfi,time(nullptr),request.choice,request.revision,native.progress);
         result.outcome=Outcome::Synced;
     } catch(const std::exception& error) {
         if(!open || cancel.load()) throw;
@@ -179,14 +173,14 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                 case Command::Download: {
                     resolve(request.book); scan(cancel);
                     const auto book=resolve(request.book);
-                    if(!book.path.empty()) { verify(book); result.outcome=Outcome::Reused; break; }
+                    if(!book.path.empty()) { (void)VerifiedManagedBook(book); result.outcome=Outcome::Reused; break; }
                     const auto stored=download_book(*cloud_,book.book,config_.books_root,config_.ca,time(nullptr));
                     state_->register_download(request.book.account,request.book.hash,stored);
                     result.outcome=Outcome::Downloaded; break;
                 }
                 case Command::Sync: case Command::Open: synchronize(request,result,cancel); break;
                 case Command::ReadOffline: {
-                    const auto book=resolve(request.book); verify(book); check_cancel(cancel);
+                    const auto book=resolve(request.book); (void)VerifiedManagedBook(book); check_cancel(cancel);
                     result.open_path=book.path; result.outcome=Outcome::LocalOpen; break;
                 }
                 case Command::Covers: {

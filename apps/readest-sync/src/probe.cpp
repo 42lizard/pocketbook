@@ -41,7 +41,8 @@ public:
     Database& operator=(const Database&) = delete;
 };
 
-Json query(Database& db, const char* sql, const std::vector<std::string>& params = {}) {
+template<class Visit>
+void query_each(Database& db, const char* sql, const std::vector<std::string>& params, Visit visit) {
     sqlite3_stmt* raw = nullptr;
     if (sqlite3_prepare_v2(db.db, sql, -1, &raw, nullptr) != SQLITE_OK)
         throw std::runtime_error(sqlite3_errmsg(db.db));
@@ -49,11 +50,8 @@ Json query(Database& db, const char* sql, const std::vector<std::string>& params
     for (size_t i = 0; i < params.size(); ++i)
         if (sqlite3_bind_text(raw, i + 1, params[i].c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK)
             throw std::runtime_error(sqlite3_errmsg(db.db));
-    Json rows(json_object_new_array(), json_object_put);
     int rc;
     while ((rc = sqlite3_step(raw)) == SQLITE_ROW) {
-        if (json_object_array_length(rows.get()) >= 128)
-            throw std::runtime_error("Too many matching rows; refusing ambiguous state");
         auto row = object();
         for (int col = 0; col < sqlite3_column_count(raw); ++col) {
             const char* name = sqlite3_column_name(raw, col);
@@ -66,9 +64,18 @@ Json query(Database& db, const char* sql, const std::vector<std::string>& params
                 put(row.get(), name, std::string(text, size));
             }
         }
-        json_object_array_add(rows.get(), row.release());
+        visit(row.get());
     }
     if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(db.db));
+}
+
+Json query(Database& db, const char* sql, const std::vector<std::string>& params = {}) {
+    Json rows(json_object_new_array(), json_object_put);
+    query_each(db, sql, params, [&](json_object* row) {
+        if (json_object_array_length(rows.get()) >= 128)
+            throw std::runtime_error("Too many matching rows; refusing ambiguous state");
+        json_object_array_add(rows.get(), json_object_get(row));
+    });
     return rows;
 }
 
@@ -312,16 +319,14 @@ std::map<std::string,double> native_percentages(const std::string& snapshot,
     Database db(snapshot);
     std::map<std::string,double> result;
     const std::set<std::string> wanted(paths.begin(),paths.end());
-    auto rows=query(db,
+    query_each(db,
         "WITH identities AS (SELECT DISTINCT f.book_id,hex(f.fast_hash) AS hash,f.filename,d.name FROM files f "
         "JOIN folders d ON d.id=f.folder_id AND d.storageid=f.storageid), "
         "unique_paths AS (SELECT filename,name,MIN(book_id) AS book_id FROM identities GROUP BY filename,name HAVING COUNT(*)=1), "
         "unique_settings AS (SELECT bookid,MIN(cpage) AS cpage,MIN(npage) AS npage FROM books_settings GROUP BY bookid HAVING COUNT(*)=1) "
-        "SELECT p.filename,p.name,s.cpage,s.npage FROM unique_paths p JOIN unique_settings s ON s.bookid=p.book_id");
-    for(size_t i=0;i<json_object_array_length(rows.get());++i) {
-        auto* row=json_object_array_get_idx(rows.get(),i);
+        "SELECT p.filename,p.name,s.cpage,s.npage FROM unique_paths p JOIN unique_settings s ON s.bookid=p.book_id", {}, [&](json_object* row) {
         const auto path=field(row,"name")+"/"+field(row,"filename");
-        if(!wanted.count(path)) continue;
+        if(!wanted.count(path)) return;
         try {
             const auto c=field(row,"cpage"),t=field(row,"npage");
             size_t ca=0,ta=0;
@@ -329,7 +334,7 @@ std::map<std::string,double> native_percentages(const std::string& snapshot,
             if(ca==c.size() && ta==t.size() && std::isfinite(current) && std::isfinite(total) && current>=0 && total>0)
                 result[path]=std::min(current/total,1.0)*100;
         } catch(const std::exception&) { /* Unknown page count, not zero progress. */ }
-    }
+    });
     return result;
 }
 void backup_native_database(const std::string& path, const std::string& destination) {
