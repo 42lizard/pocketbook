@@ -10,6 +10,37 @@
 
 namespace readest {
 namespace {
+std::string filename_component(const std::string& value, size_t limit) {
+    std::string result;
+    for (unsigned char c : value) {
+        if (c <= 32 || c == 127 || std::strchr("<>:\"/\\|?*", c)) c = ' ';
+        if (c == ' ' && (result.empty() || result.back() == ' ')) continue;
+        result += static_cast<char>(c);
+    }
+    const auto start = result.find_first_not_of(" .");
+    if (start == std::string::npos) return "";
+    result.erase(0, start);
+    if (result.size() > limit) {
+        // Keep UTF-8 characters intact at the byte limit.
+        while (limit && (static_cast<unsigned char>(result[limit]) & 0xc0) == 0x80) --limit;
+        result.resize(limit);
+    }
+    const auto end = result.find_last_not_of(" .");
+    result.resize(end == std::string::npos ? 0 : end + 1);
+    return result;
+}
+std::string epub_filename(const LibraryBook& book) {
+    auto title = filename_component(book.title, 120);
+    const auto author = filename_component(book.author, 60);
+    if (title.empty()) title = "Untitled";
+    std::string stem = title + (author.empty() ? "" : " - " + author);
+    auto base = stem.substr(0, stem.find('.'));
+    for (auto& c : base) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" ||
+        (base.size() == 4 && (base.substr(0, 3) == "COM" || base.substr(0, 3) == "LPT") &&
+         base[3] >= '1' && base[3] <= '9')) stem.insert(0, "_");
+    return stem + ".epub";
+}
 std::string encode(const std::string& s) {
     const char* hex = "0123456789ABCDEF"; std::string result;
     for (unsigned char c : s) {
@@ -108,14 +139,7 @@ StoredBook download_book(Cloud& cloud, const LibraryBook& book, const std::strin
     if (!mkdtemp(name.data())) throw std::runtime_error("Cannot create book download directory");
     attempt.dir = name.data(); attempt.temporary = attempt.dir + "/download.part";
     attempt.metadata = attempt.dir + "/readest.json";
-    std::string title;
-    for (unsigned char c : book.title) {
-        if (title.size() >= 60) break;
-        if (std::isalnum(c) && c < 128) title += c;
-        else if (!title.empty() && title.back() != '_') title += '_';
-    }
-    if (title.empty()) title = "Book";
-    attempt.final = attempt.dir + "/" + title + "-" + book.hash.substr(0, 8) + ".epub";
+    attempt.final = attempt.dir + "/" + epub_filename(book);
     attempt.fd = open(attempt.temporary.c_str(), O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (attempt.fd < 0) throw std::runtime_error("Cannot create download file");
     auto response = transfer(url, attempt.fd, ca, static_cast<size_t>(candidate.second));

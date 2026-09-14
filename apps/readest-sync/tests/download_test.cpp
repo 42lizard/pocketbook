@@ -192,4 +192,73 @@ int main(int argc, char** argv) {
     try { cache_cover(cloud,root,hash,assets,"test-ca",1000,jpeg_transfer); }
     catch(const std::runtime_error&) { rejected=true; }
     assert(rejected); // Truncated marker segment cannot be accepted.
+
+    // Human-readable names remain safe paths and retain exact EPUB bytes.
+    mode = 0;
+    struct NamingCase { std::string title, author, expected; };
+    const NamingCase names[] = {
+        {"The Left Hand of Darkness", "Ursula K. Le Guin", "The Left Hand of Darkness - Ursula K. Le Guin.epub"},
+        {"Über das Lesen 日本語", "José García", "Über das Lesen 日本語 - José García.epub"},
+        {"../A & B", "", "A & B.epub"},
+        {" A: \"Book\"/Part\\Two?*<>|\n. ", " Author\tName ", "A Book Part Two - Author Name.epub"},
+        {"...", " / ", "Untitled.epub"},
+        {"con", "", "_con.epub"},
+        {"LPT1.notes", "", "_LPT1.notes.epub"},
+        {std::string(119, 'a') + "日末", std::string(59, 'b') + "é", std::string(119, 'a') + " - " + std::string(59, 'b') + ".epub"}
+    };
+    for (const auto& name : names) {
+        book.title = name.title; book.author = name.author;
+        const auto saved = download_book(cloud, book, root, "test-ca", 1000, transfer);
+        assert(saved.path.substr(saved.path.rfind('/') + 1) == name.expected);
+        assert(read(saved.path) == bytes);
+        const auto metadata = parse_json(read(saved.path.substr(0, saved.path.rfind('/')) + "/readest.json"));
+        assert(string_member(metadata.get(), "filename") == name.expected);
+        const auto duplicate = download_book(cloud, book, root, "test-ca", 1000, transfer);
+        assert(duplicate.path != saved.path && read(saved.path) == bytes);
+    }
+
+    // Discover ordinary device books, including cloud entries with progress only.
+    const auto device = std::string(argv[1]) + "/device";
+    assert(mkdir(device.c_str(), 0700) == 0);
+    for (const auto& dir : {"system", ".hidden", "managed", "Novels"})
+        assert(mkdir((device + "/" + dir).c_str(), 0700) == 0);
+    auto write_book = [&](const std::string& path) {
+        std::ofstream file(path, std::ios::binary); file << bytes; assert(file.good());
+    };
+    for (const auto& dir : {"system", ".hidden", "managed"}) write_book(device + "/" + dir + "/book.epub");
+    assert(symlink(argv[2], (device + "/linked.epub").c_str()) == 0);
+    { std::ofstream invalid(device + "/broken.epub"); invalid << "not a ZIP"; }
+    State discovered(std::string(argv[1]) + "/discovered.db");
+    LibraryPage page; page.cursor = 1; page.books.push_back(book);
+    LibraryBook unrelated = book; unrelated.hash = std::string(32, '0'); page.books.push_back(unrelated);
+    discovered.apply_page("fixture-user", 0, page);
+    BookFiles progress_only; progress_only.epubs = 0;
+    discovered.save_book_files("fixture-user", {{hash, progress_only}});
+    const auto scan = [&] { return discover_device_books(discovered, "fixture-user",
+        {device, device + "/absent-sd-card"}, device + "/managed", [] { return false; }); };
+    assert(scan() == 0);
+    const auto local = device + "/Novels/My existing book.EPUB";
+    write_book(local);
+    bool cancelled = false;
+    try { discover_device_books(discovered, "fixture-user", {device}, device + "/managed", [] { return true; }); }
+    catch (const std::runtime_error&) { cancelled = true; }
+    assert(cancelled);
+    assert(scan() == 1 && scan() == 0 && read(local) == bytes);
+    assert(discovered.books("other-user").empty());
+    for (const auto& found : discovered.books("fixture-user")) {
+        if (found.book.hash == hash) {
+            assert(found.path == local && found.sha256 == first.integrity.sha256);
+            assert(found.epubs == 0 && book_availability(found) == Availability::OnDevice);
+        } else assert(found.path.empty());
+    }
+    const auto moved_local = device + "/Moved.epub";
+    assert(rename(local.c_str(), moved_local.c_str()) == 0);
+    assert(scan() == 1 && read(moved_local) == bytes);
+    ManagedBook category; category.book.format = "EPUB";
+    assert(book_availability(category) == Availability::Unknown);
+    category.epubs = 0; assert(book_availability(category) == Availability::ProgressOnly);
+    category.epubs = 1; assert(book_availability(category) == Availability::Downloadable);
+    category.epubs = 2; assert(book_availability(category) == Availability::Multiple);
+    category.book.format = "PDF"; assert(book_availability(category) == Availability::Unavailable);
+    category.book.deleted = true; assert(book_availability(category) == Availability::Removed);
 }

@@ -48,7 +48,7 @@ std::string status="Starting…", filter, open_path, busy_message;
 std::string model,firmware;
 char email[256]={},password[1024]={};
 size_t selected_book=0,page=0;
-int selected=0;
+int selected=0, availability_filter=0;
 unsigned sequence=0;
 SyncAction last_action=SyncAction::None;
 long long conflict_revision=0;
@@ -142,16 +142,22 @@ bool tiled() { return initialized && signed_in && !detail; }
 size_t page_size() { return landscape?4:6; }
 size_t page_books() { const auto first=page*page_size(); return first<visible.size()?std::min(page_size(),visible.size()-first):0; }
 std::string availability(const ManagedBook& book) {
-    if(!book.path.empty() && !missing_download(book.path)) return "On device";
-    if(book.book.deleted) return "Removed from cloud";
-    std::string format=book.book.format;
-    for(auto& c:format) if(c>='a' && c<='z') c-=32;
-    if(!format.empty() && format!="EPUB") return "EPUB unavailable";
-    if(book.epubs==-2) return "EPUB unavailable";
-    if(book.epubs<0) return "Not checked";
-    if(book.epubs==0) return "Position only";
-    if(book.epubs>1) return "Multiple EPUBs";
-    return "Downloadable";
+    switch(book_availability(book)) {
+        case Availability::OnDevice: return "On device";
+        case Availability::Downloadable: return "Available to download";
+        case Availability::ProgressOnly: return "Progress only";
+        case Availability::Unknown: return "Not checked";
+        case Availability::Unavailable: return "EPUB unavailable";
+        case Availability::Multiple: return "Multiple EPUBs";
+        case Availability::Removed: return "Removed from cloud";
+    }
+    return "Not checked";
+}
+size_t scan_device_books() {
+    const auto count=discover_device_books(*state,cloud->session().user_id,
+        platform::bookRoots(),books_root,[] { return cancel.load(); });
+    refresh_cache();
+    return count;
 }
 // Publish an immutable UI snapshot. Never read worker-owned data while busy.
 void draw() {
@@ -165,6 +171,7 @@ void draw() {
         view["pages"]=static_cast<int>(std::max<size_t>(1,(visible.size()+page_size()-1)/page_size()));
         view["count"]=static_cast<int>(visible.size());
         view["filter"]=QString::fromStdString(filter);
+        view["availabilityFilter"]=availability_filter;
         view["canPrevious"]=page>0;
         view["canNext"]=(page+1)*page_size()<visible.size();
         QVariantList actions,books;
@@ -263,7 +270,7 @@ void refresh_library() {
             if(cancel.load()) throw;
             metadata_error=e.what();
         }
-        refresh_cache();
+        scan_device_books();
         if(!focus.empty()) for(size_t i=0;i<library.size();++i) if(library[i].book.hash==focus) selected_book=i;
         try {
             auto files=fetch_book_files(*cloud,time(nullptr));
@@ -294,7 +301,7 @@ void sign_in() {
     start("Signing in",[address,secret] {
         cloud->sign_in(address,secret,time(nullptr));
         recover_downloads(*state,cloud->session().user_id,books_root);
-        refresh_cache(); status="Signed in. Choose Refresh library.";
+        scan_device_books(); status="Signed in. Choose Refresh library.";
     },true);
 }
 void home() {
@@ -305,8 +312,13 @@ void home() {
     buttons.push_back({"Search",[] {}});
     visible.clear();
     auto lower=[](std::string s) { for(auto& c:s) if(c>='A'&&c<='Z') c+=32; return s; };
-    for(size_t i=0;i<library.size();++i)
+    for(size_t i=0;i<library.size();++i) {
+        const auto kind=book_availability(library[i]);
+        if(availability_filter==1 && kind!=Availability::Downloadable) continue;
+        if(availability_filter==2 && kind!=Availability::OnDevice) continue;
+        if(availability_filter==3 && kind!=Availability::ProgressOnly) continue;
         if(lower(library[i].book.title+" "+library[i].book.author).find(lower(filter))!=std::string::npos) visible.push_back(i);
+    }
     if(page*page_size()>=visible.size()) page=0;
     for(size_t i=page*page_size();i<std::min(visible.size(),page*page_size()+page_size());++i) {
         size_t index=visible[i];
@@ -404,6 +416,10 @@ void show_detail() {
         buttons.push_back({"Check availability",refresh_library});
     } else if(book.path.empty()) {
         buttons.push_back({"Download EPUB",[book] { start("Downloading",[book] {
+            scan_device_books();
+            for(size_t i=0;i<library.size();++i) if(library[i].book.hash==book.book.hash && !library[i].path.empty()) {
+                selected_book=i; status="Found a matching EPUB on device. Choose Open to read."; return;
+            }
             auto downloaded=download_book(*cloud,book.book,books_root,ca,time(nullptr));
             state->register_download(cloud->session().user_id,book.book.hash,downloaded);
             refresh_cache();
@@ -445,6 +461,7 @@ void AppController::initialize() {
         if(cloud->session().signed_in()) {
             auto warnings=recover_downloads(*state,cloud->session().user_id,books_root);
             if(!warnings.empty()) status="Some downloads need attention: "+warnings.front();
+            scan_device_books();
         }
         refresh_cache(); initialized=true;
     });
@@ -463,6 +480,16 @@ void AppController::signIn(const QString& address,const QString& secret) {
     std::snprintf(password,sizeof(password),"%s",s.constData()); sign_in();
 }
 void AppController::search(const QString& text) { if(!busy) { filter=text.toStdString(); page=0; home(); } }
+void AppController::setAvailabilityFilter(int value) {
+    if(!busy && tiled() && value>=0 && value<=3) { availability_filter=value; page=0; home(); }
+}
+void AppController::scanDevice() {
+    if(busy || !tiled()) return;
+    start("Looking for existing EPUBs",[] {
+        const auto count=scan_device_books();
+        status="Device scan complete. Matched "+std::to_string(count)+" existing EPUBs.";
+    });
+}
 void AppController::turnPage(int direction) {
     if(busy || !tiled()) return;
     if(direction<0 && page>0) --page;

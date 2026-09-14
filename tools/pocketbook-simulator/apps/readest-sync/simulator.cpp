@@ -115,6 +115,7 @@ QString model() { return "PB743G"; }
 QString firmware() { return "U743g.6.11.1683"; }
 QString dataRoot() { return storage()+"/system/readest-sync"; }
 QString nativeDatabase() { return storage()+"/system/explorer-3/explorer-3.db"; }
+std::vector<std::string> bookRoots() { return {storage().toStdString()}; }
 void connectNetwork(int (*callback)(int)) { simulator->connectNetwork(callback); }
 void pingNetwork() {}
 bool openBook(const QString& path) { return simulator && simulator->open(path); }
@@ -292,7 +293,8 @@ void Simulator::transfer(int mode) { if(!realCloud() && mode>=0 && mode<=4) { tr
 bool Simulator::open(const QString& path) {
     try {
         const auto canonical=QFileInfo(path).canonicalFilePath();
-        if(!canonical.startsWith(QFileInfo(storage()+"/Books/Readest").canonicalFilePath()+"/"))
+        const auto storage_root=QFileInfo(storage()).canonicalFilePath();
+        if(storage_root.isEmpty() || !canonical.startsWith(storage_root+"/"))
             throw std::runtime_error("Book is outside simulator storage");
         if(realCloud()) {
             // Synthetic chapter CFIs describe our fixture EPUBs only. Never

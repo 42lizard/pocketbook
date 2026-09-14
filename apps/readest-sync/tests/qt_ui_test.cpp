@@ -79,6 +79,13 @@ int main(int argc,char** argv) {
     control.search("Book 50"); assert(page==0 && visible.size()==1);
     control.activate(2); assert(detail && buttons.front().first=="Check availability");
     control.back(); assert(!detail);
+    control.search(""); control.setAvailabilityFilter(1);
+    assert(page==0 && visible.size()==25);
+    control.search("Book 1"); assert(visible.size()==6);
+    control.setAvailabilityFilter(2); assert(visible.empty());
+    control.search(""); assert(visible.size()==1);
+    control.setAvailabilityFilter(3); assert(visible.size()==25);
+    control.setAvailabilityFilter(0); assert(visible.size()==51);
     control.search(""); control.setLandscape(true);
     assert(control.view()["books"].toList().size()==4 && control.view()["pages"].toInt()==13);
     control.setLandscape(false);

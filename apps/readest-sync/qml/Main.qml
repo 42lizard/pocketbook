@@ -103,7 +103,11 @@ Window {
                 id: toolbar
                 width: parent.width
                 spacing: window.gap
-                ActionButton { width: parent.width; text: "Refresh library"; onAction: appController.activate(0) }
+                Row {
+                    width: parent.width; spacing: window.gap
+                    ActionButton { width: (parent.width - window.gap) / 2; text: "Refresh library"; onAction: appController.activate(0) }
+                    ActionButton { width: (parent.width - window.gap) / 2; text: "Scan device"; onAction: appController.scanDevice() }
+                }
                 FramedTextInput {
                     id: search
                     objectName: "searchInput"
@@ -111,6 +115,27 @@ Window {
                     placeholderText: "Search title or author"
                     text: window.view.filter || ""
                     onTextEdited: appController.search(text)
+                }
+                Row {
+                    width: parent.width; spacing: window.gap / 2
+                    Repeater {
+                        model: ["All books", "Available to download", "On device", "Progress only"]
+                        delegate: Rectangle {
+                            required property int index
+                            required property string modelData
+                            width: (toolbar.width - 3 * window.gap / 2) / 4
+                            height: window.buttonHeight
+                            color: window.view.availabilityFilter === index ? "black" : "white"
+                            border.color: "black"
+                            Text {
+                                anchors { fill: parent; margins: 3 }
+                                text: modelData; color: parent.color == "#000000" ? "white" : "black"
+                                font.pixelSize: Math.max(14, window.width / 65)
+                                wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                            }
+                            MouseArea { anchors.fill: parent; onClicked: appController.setAvailabilityFilter(index) }
+                        }
+                    }
                 }
             }
             Grid {

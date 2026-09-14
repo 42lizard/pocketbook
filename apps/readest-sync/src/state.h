@@ -2,6 +2,7 @@
 #include "download.h"
 #include "sync.h"
 #include <sqlite3.h>
+#include <functional>
 
 namespace readest {
 bool missing_download(const std::string& path);
@@ -12,6 +13,8 @@ struct ManagedBook {
     int epubs=-1; // -1 means not checked.
     BookFiles files;
 };
+enum class Availability { OnDevice, Downloadable, ProgressOnly, Unknown, Unavailable, Multiple, Removed };
+Availability book_availability(const ManagedBook& book);
 struct SavedSync {
     SyncPositions positions;
     std::string pending_remote, remote_config;
@@ -39,4 +42,8 @@ private:
 // warnings for invalid managed metadata; these must be surfaced by the UI.
 std::vector<std::string> recover_downloads(State& state, const std::string& user,
                                           const std::string& root);
+// Match existing EPUB bytes to known library identities without changing files.
+size_t discover_device_books(State& state, const std::string& user,
+    const std::vector<std::string>& roots, const std::string& managed_root,
+    const std::function<bool()>& cancelled);
 } // namespace readest

@@ -149,6 +149,32 @@ int main(int argc,char** argv) {
     assert(fetch_progress(*cloud,library[selected_book].book.hash,time(nullptr)).location=="epubcfi(/6/4!/4/2)");
     assert(readest::native_position(database,path).cfi=="epubcfi(/6/4!/4/2)");
     action(control,"Back to library");
+    // Link a progress-only book offline, retaining its existing native position.
+    const auto existing=QString::fromStdString(platform::bookRoots().front())+"/Existing book.epub";
+    assert(QFile::copy(QStringLiteral(READEST_SIM_FIXTURES)+"/01.epub",existing));
+    const auto existing_hash=readest::inspect_epub(existing.toStdString()).readest_hash;
+    assert(sim.open(existing)); sim.turnReader(1); sim.closeReader(); finish();
+    const auto before=readest::native_position(database,existing.toStdString()).cfi;
+    const auto managed_dirs=QDir(QString::fromStdString(books_root)).entryList(QDir::Dirs|QDir::NoDotAndDotDot);
+    sim.network(1); control.scanDevice(); finish();
+    control.setAvailabilityFilter(2); assert(visible.size()==2);
+    for(size_t i=0;i<visible.size();++i) if(library[visible[i]].book.hash==existing_hash) {
+        control.activate(static_cast<int>(2+i)); break;
+    }
+    assert(detail && library[selected_book].path==existing.toStdString() && library[selected_book].epubs==0);
+    action(control,"Read offline"); assert(sim.readerPath()==existing);
+    sim.closeReader(); finish();
+    assert(readest::native_position(database,existing.toStdString()).cfi==before);
+    assert(QDir(QString::fromStdString(books_root)).entryList(QDir::Dirs|QDir::NoDotAndDotDot)==managed_dirs);
+    action(control,"Back to library"); control.setAvailabilityFilter(0); sim.network(0);
+    // A file copied after the last scan also prevents a download, even if cloud requests fail.
+    control.search("04 ·"); assert(visible.size()==1); control.activate(2);
+    const auto late=QString::fromStdString(platform::bookRoots().front())+"/Copied later.epub";
+    assert(QFile::copy(QStringLiteral(READEST_SIM_FIXTURES)+"/03.epub",late));
+    sim.transfer(2); action(control,"Download EPUB");
+    assert(library[selected_book].path==late.toStdString());
+    assert(QDir(QString::fromStdString(books_root)).entryList(QDir::Dirs|QDir::NoDotAndDotDot)==managed_dirs);
+    sim.transfer(0); action(control,"Back to library"); control.search("");
     auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); assert(window);
     assert(!window->property("resumeOnActivation").toBool());
     auto* overlay=window->findChild<QQuickItem*>("simulatorOverlay"); assert(overlay);

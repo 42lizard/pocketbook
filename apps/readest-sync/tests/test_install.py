@@ -49,4 +49,27 @@ with tempfile.TemporaryDirectory(prefix='readest-install-test-') as work:
         pass
     else:
         raise AssertionError('Changed installed app was accepted')
+    probe = mount / installer.OPTIONAL_PROBE
+    probe.unlink()
+    expected = installer.digest(mount / 'applications/readest-sync.app')
+    backup = installer.install(package, mount, expected, root)
+    audit = json.loads((backup / 'audit.json').read_text())
+    assert audit['status'] == 'installed'
+    assert audit['protectedBefore'] == audit['protectedAfter']
+    assert audit['protectedAfter'][installer.OPTIONAL_PROBE] is None and not probe.exists()
+    probe.symlink_to(mount / 'missing.epub')
+    try:
+        installer.install(package, mount, expected, root)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError('Unsafe probe symlink was accepted')
+    probe.unlink()
+    (mount / 'system/config/books.db').unlink()
+    try:
+        installer.install(package, mount, expected, root)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError('Missing protected database was accepted')
     print('Installer allowlist, checksums, backups and protected-file checks passed.')

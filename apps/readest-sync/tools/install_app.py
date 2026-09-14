@@ -11,12 +11,26 @@ import tempfile
 TARGETS = ('system/readest-sync/ca-certificates.crt', 'applications/readest-sync.app')
 PROTECTED = ('system/explorer-3/explorer-3.db', 'system/config/books.db',
              'Books/Readest/readest-sync-probe.epub')
+OPTIONAL_PROBE = 'Books/Readest/readest-sync-probe.epub'
 
 def digest(path):
     if path.is_symlink() or not path.is_file():
         raise RuntimeError(f'Missing or unsafe file: {path}')
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+def protected_snapshot(mount):
+    snapshot = {}
+    for relative in PROTECTED:
+        path = mount / relative
+        if relative == OPTIONAL_PROBE:
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                snapshot[relative] = None
+                continue
+        snapshot[relative] = digest(path)
+    return snapshot
 
 def install(package, mount, expected_app_hash, backup_parent):
     package, mount = Path(package).absolute(), Path(mount).absolute()
@@ -33,7 +47,7 @@ def install(package, mount, expected_app_hash, backup_parent):
             raise RuntimeError('Unsafe or missing app destination')
     if digest(mount / 'applications/readest-sync.app') != expected_app_hash:
         raise RuntimeError('Installed app changed: inspect it before proceeding')
-    before = {relative: digest(mount / relative) for relative in PROTECTED}
+    before = protected_snapshot(mount)
     backup = Path(tempfile.mkdtemp(prefix='readest-app-install-', dir=backup_parent))
     previous = {}
     for relative in TARGETS:
@@ -67,7 +81,7 @@ def install(package, mount, expected_app_hash, backup_parent):
                 raise RuntimeError('Installed files changed during preparation')
         for temporary, target in staged:
             os.replace(temporary, target)
-        after = {relative: digest(mount / relative) for relative in PROTECTED}
+        after = protected_snapshot(mount)
         if after != before:
             raise RuntimeError('Protected files changed during installation; retain audit and inspect device')
         for relative in TARGETS:

@@ -9,6 +9,7 @@ QString model() { return QString::fromUtf8(GetDeviceModel()); }
 QString firmware() { return QString::fromUtf8(GetSoftwareVersion()); }
 QString dataRoot() { return QStringLiteral("/mnt/ext1/system/readest-sync"); }
 QString nativeDatabase() { return QStringLiteral("/mnt/ext1/system/explorer-3/explorer-3.db"); }
+std::vector<std::string> bookRoots() { return {"/mnt/ext1", "/mnt/ext2"}; }
 void connectNetwork(int (*callback)(int)) { NetConnectAsync(callback); }
 void pingNetwork() { NetMgrPing(); }
 bool openBook(const QString& path) { return OpenBook(path.toUtf8().constData(),nullptr,0)!=0; }

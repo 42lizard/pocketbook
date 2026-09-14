@@ -14,6 +14,8 @@ public:
     Q_INVOKABLE void activate(int index);
     Q_INVOKABLE void signIn(const QString& email,const QString& password);
     Q_INVOKABLE void search(const QString& text);
+    Q_INVOKABLE void setAvailabilityFilter(int value);
+    Q_INVOKABLE void scanDevice();
     Q_INVOKABLE void turnPage(int direction);
     Q_INVOKABLE void setLandscape(bool landscape);
     Q_INVOKABLE void back();

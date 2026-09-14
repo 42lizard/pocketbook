@@ -1,6 +1,7 @@
 #include "state.h"
 #include "json_util.h"
 #include <cerrno>
+#include <algorithm>
 #include <dirent.h>
 #include <fcntl.h>
 #include <set>
@@ -64,6 +65,58 @@ bool missing_download(const std::string& path) {
     struct stat st;
     // Permission errors, symlinks and non-regular files are not missing files.
     return !path.empty() && lstat(path.c_str(),&st)!=0 && errno==ENOENT;
+}
+Availability book_availability(const ManagedBook& book) {
+    if (!book.path.empty() && !missing_download(book.path)) return Availability::OnDevice;
+    if (book.book.deleted) return Availability::Removed;
+    auto format = book.book.format;
+    for (auto& c : format) if (c >= 'a' && c <= 'z') c -= 32;
+    if ((!format.empty() && format != "EPUB") || book.epubs == -2) return Availability::Unavailable;
+    if (book.epubs < 0) return Availability::Unknown;
+    if (book.epubs == 0) return Availability::ProgressOnly;
+    if (book.epubs > 1) return Availability::Multiple;
+    return Availability::Downloadable;
+}
+size_t discover_device_books(State& state, const std::string& user,
+    const std::vector<std::string>& roots, const std::string& managed_root,
+    const std::function<bool()>& cancelled) {
+    std::set<std::string> needed;
+    for (const auto& book : state.books(user))
+        if (book.path.empty() && !book.book.deleted) needed.insert(book.book.hash);
+    size_t matched = 0;
+    std::vector<std::string> pending(roots.rbegin(), roots.rend());
+    while (!pending.empty() && !needed.empty()) {
+        if (cancelled()) throw std::runtime_error("Cancelled.");
+        const auto path = pending.back(); pending.pop_back();
+        if (path == managed_root) continue; // Managed recovery enforces account ownership.
+        struct stat st;
+        if (lstat(path.c_str(), &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            DIR* dir = opendir(path.c_str());
+            if (!dir) continue;
+            std::vector<std::string> children;
+            while (auto* entry = readdir(dir)) {
+                const std::string name = entry->d_name;
+                if (name[0] != '.' && name != "system") children.push_back(path + "/" + name);
+            }
+            closedir(dir);
+            std::sort(children.rbegin(), children.rend());
+            pending.insert(pending.end(), children.begin(), children.end());
+            continue;
+        }
+        if (!S_ISREG(st.st_mode) || st.st_size <= 0 || st.st_size > 256LL * 1024 * 1024 || path.size() < 5) continue;
+        auto extension = path.substr(path.size() - 5);
+        for (auto& c : extension) if (c >= 'A' && c <= 'Z') c += 32;
+        if (extension != ".epub") continue;
+        StoredBook book; book.path = path;
+        try { book.integrity = inspect_epub(path); }
+        catch (const std::runtime_error&) { continue; } // An unrelated invalid EPUB must not stop discovery.
+        if (!needed.count(book.integrity.readest_hash)) continue;
+        if (cancelled()) throw std::runtime_error("Cancelled.");
+        state.register_download(user, book.integrity.readest_hash, book);
+        needed.erase(book.integrity.readest_hash); ++matched;
+    }
+    return matched;
 }
 State::State(const std::string& path) {
     struct stat st;

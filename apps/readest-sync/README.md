@@ -75,6 +75,21 @@ are saved for login continuity; PocketBook's USB-readable FAT storage cannot
 make them confidential through Unix file permissions. Sign-out removes the
 saved session without revoking sessions on the user's other devices.
 
+New EPUB downloads use `Title - Author.epub` (or `Title.epub` when no author is
+available), preserving accents and non-Latin text. Unsafe filename characters
+are replaced with spaces and long names are shortened. Separate managed
+directories prevent books with the same name from overwriting each other.
+Existing downloads keep their filenames and reading positions.
+
+Existing EPUBs on internal storage and SD card are matched to the Readest library
+by content hash at startup, during refresh, and before a download. Matching books
+are registered at their original paths; they are not copied, renamed, or modified.
+Use **Scan device** to find newly copied books without Wi-Fi. Scans run in the
+background and can be cancelled; large collections take longer to inspect.
+System/hidden folders, symlinks, and the app's managed download directory are
+excluded (managed downloads use their account-specific recovery metadata).
+Only matching Readest library entries are linked; unrelated books are left alone.
+
 Each managed download has a metadata file recording its account, Readest book
 hash, original-byte SHA-256, size and filename. Recovery validates completed
 unregistered downloads after restart. Unknown/partial files are left untouched;
@@ -166,10 +181,12 @@ These labels are display-only and never determine a sync position.
 The library shows six book tiles in portrait and four in landscape, with title,
 author and file availability. Tap a tile for its actions. Use **Previous/Next**
 or the hardware page buttons to change pages; search still filters title/author.
+Choose **All books**, **Available to download**, **On device**, or **Progress only**
+above the tiles. Availability filters combine with search and reset pagination.
 
-- **On device**: the managed EPUB exists locally.
-- **Downloadable**: Readest storage lists one supported EPUB.
-- **Position only**: the library entry has no uploaded EPUB; only library/sync
+- **On device**: a downloaded or matched existing EPUB is present locally.
+- **Available to download**: no local copy is linked and Readest storage lists one supported EPUB.
+- **Progress only**: no local copy is linked and the library entry has no uploaded EPUB; only library/sync
   data is available to this app. Upload the EPUB in Readest and check again.
 - **Not checked**: refresh to check storage; a failed check never means “no EPUB”.
 - **Multiple EPUBs**, **EPUB unavailable**, or **Removed from cloud**: the entry
