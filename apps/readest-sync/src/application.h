@@ -60,6 +60,7 @@ private:
     std::unique_ptr<Cloud> cloud_;
     std::unique_ptr<State> state_;
     unsigned sequence_=0;
+    void trace(const char* phase) const;
     void check_cancel(const std::atomic<bool>& cancel) const;
     size_t scan(const std::atomic<bool>& cancel);
     LibrarySnapshot snapshot();

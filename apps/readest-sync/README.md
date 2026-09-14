@@ -124,6 +124,10 @@ are saved for login continuity; PocketBook's USB-readable FAT storage cannot
 make them confidential through Unix file permissions. Sign-out removes the
 saved session without revoking sessions on the user's other devices.
 
+`operations.log` records refresh phases, process IDs, timestamps and peak memory
+in KiB to help diagnose device exits. It contains no credentials or book data and
+is truncated at 64 KiB. It is a best-effort phase log, not a crash backtrace.
+
 New EPUB downloads use `Title - Author.epub` (or `Title.epub` when no author is
 available), preserving accents and non-Latin text. Unsafe filename characters
 are replaced with spaces and long names are shortened. Separate managed

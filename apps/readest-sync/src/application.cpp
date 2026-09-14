@@ -1,6 +1,10 @@
 #include "application.h"
 #include <ctime>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/resource.h>
+#include <cstdio>
 
 namespace readest {
 namespace {
@@ -11,12 +15,33 @@ void verify(const ManagedBook& book) {
 }
 }
 ApplicationService::ApplicationService(ApplicationConfig config):config_(std::move(config)) {}
+void ApplicationService::trace(const char* phase) const {
+    // Best-effort, bounded diagnostics. Only fixed phase names and process
+    // metadata: never credentials, requests, filenames or book contents.
+    const int fd=open((config_.root+"/operations.log").c_str(),O_WRONLY|O_CREAT|O_APPEND|O_NOFOLLOW,0600);
+    if(fd<0) return;
+    struct stat st;
+    if(fstat(fd,&st)==0 && S_ISREG(st.st_mode) && (st.st_size<65536 || ftruncate(fd,0)==0)) {
+        struct rusage usage={}; getrusage(RUSAGE_SELF,&usage);
+        long peak=usage.ru_maxrss;
+#ifdef __APPLE__
+        peak/=1024;
+#endif
+        char line[192];
+        const int size=snprintf(line,sizeof(line),"%lld pid=%ld peak_kib=%ld %s\n",
+            static_cast<long long>(time(nullptr)),static_cast<long>(getpid()),peak,phase);
+        if(size>0 && static_cast<size_t>(size)<sizeof(line)) { const auto written=write(fd,line,size); (void)written; }
+    }
+    close(fd);
+}
 void ApplicationService::check_cancel(const std::atomic<bool>& cancel) const {
     if(cancel.load()) throw std::runtime_error("Cancelled.");
 }
 size_t ApplicationService::scan(const std::atomic<bool>& cancel) {
-    return discover_device_books(*state_,cloud_->session().user_id,config_.book_roots,config_.books_root,
+    trace("scan.begin");
+    const auto matches=discover_device_books(*state_,cloud_->session().user_id,config_.book_roots,config_.books_root,
         [&cancel] { return cancel.load(); });
+    trace("scan.end"); return matches;
 }
 ManagedBook ApplicationService::resolve(const BookId& id) {
     if(!cloud_ || !cloud_->session().signed_in() || id.account!=cloud_->session().user_id)
@@ -32,6 +57,7 @@ NativePosition ApplicationService::capture(const std::string& path) {
     } catch(...) { unlink(file.c_str()); throw; }
 }
 LibrarySnapshot ApplicationService::snapshot() {
+    trace("snapshot.begin");
     LibrarySnapshot result; result.initialized=bool(state_ && cloud_);
     result.signed_in=cloud_ && cloud_->session().signed_in();
     if(!result.signed_in) return result;
@@ -61,7 +87,7 @@ LibrarySnapshot ApplicationService::snapshot() {
         } catch(const std::exception&) { /* Missing native counts display as unknown. */ }
         unlink(file.c_str());
     }
-    return result;
+    trace("snapshot.end"); return result;
 }
 void ApplicationService::synchronize(const Request& request, OperationResult& result, const std::atomic<bool>& cancel) {
     const auto book=resolve(request.book); verify(book);
@@ -106,6 +132,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
         check_cancel(cancel);
         if(request.command==Command::Initialize) {
             make_directory(config_.root);
+            trace("initialize.begin");
             make_directory(config_.books_root.substr(0,config_.books_root.rfind('/'))); make_directory(config_.books_root);
             state_.reset(new State(config_.root+"/state.db"));
             cloud_.reset(new Cloud(config_.root+"/session.json",config_.ca,config_.public_key,
@@ -129,6 +156,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                 if(!cloud_->session().signed_in()) throw std::runtime_error("Sign in first.");
                 switch(request.command) {
                 case Command::Refresh: {
+                    trace("refresh.begin");
                     try {
                         long long since=state_->cursor(cloud_->session().user_id);
                         for(int pages=0;;++pages) {
@@ -136,11 +164,14 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                             if(pages>=1000) throw std::runtime_error("Library refresh limit reached; refresh again to continue.");
                             auto next=fetch_library_page(*cloud_,since,100,time(nullptr));
                             state_->apply_page(cloud_->session().user_id,since,next); since=next.cursor;
+                            trace("refresh.page.saved");
                             if(!next.more) break;
                         }
                     } catch(const std::exception& e) { check_cancel(cancel); result.metadata_error=e.what(); }
                     scan(cancel);
+                    trace("availability.begin");
                     state_->save_book_files(cloud_->session().user_id,fetch_book_files(*cloud_,time(nullptr)));
+                    trace("availability.end");
                     result.outcome=Outcome::Refreshed; break;
                 }
                 case Command::Scan: result.matched=scan(cancel); result.outcome=Outcome::Scanned; break;
@@ -158,6 +189,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                     result.open_path=book.path; result.outcome=Outcome::LocalOpen; break;
                 }
                 case Command::Covers: {
+                    trace("covers.begin");
                     if(request.books.size()>6) throw std::runtime_error("Too many visible covers");
                     const auto books=state_->books(cloud_->session().user_id);
                     for(const auto& id:request.books) {
@@ -179,12 +211,14 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
             }
         }
     } catch(const std::exception& error) {
+        trace("operation.error");
         result.error=error.what(); result.open_path.clear();
         result.outcome=cancel.load()?Outcome::Cancelled:Outcome::Failed;
     }
     // Recovery/read errors never escape the worker completion boundary.
     if(request.command!=Command::Covers && !cancel.load()) try { result.library=snapshot(); }
     catch(const std::exception& error) { result.outcome=Outcome::Failed; result.error=error.what(); result.open_path.clear(); }
+    trace("operation.end");
     return result;
 }
 }
