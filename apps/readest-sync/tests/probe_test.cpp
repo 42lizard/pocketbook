@@ -18,7 +18,9 @@ int main(int argc, char** argv) {
          "pbr:/word?page=4", "pbr:/webkit?##epubcfi(/6/2!/4/2)\n", "epubcfi(/6/2!/4/2[bad^x])"})
         assert(point_cfi(bad).empty());
     assert(point_cfi(std::string(9000, 'x')).empty());
-    if(argc==4 && std::string(argv[1])=="percentage") {
+    if(argc==4 && std::string(argv[1])=="native-progress") {
+        std::cout<<readest::native_position(argv[2],argv[3]).progress<<'\n';
+    } else if(argc==4 && std::string(argv[1])=="percentage") {
         try {
             const auto values=readest::native_percentages(argv[2],{argv[3]});
             const auto found=values.find(argv[3]);

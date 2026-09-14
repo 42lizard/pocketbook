@@ -93,7 +93,7 @@ RemoteProgress fetch_progress(Cloud& cloud, const std::string& hash, long long n
 }
 SyncAction sync_managed(Cloud& cloud, State& state, const ManagedBook& book,
                         const std::string& local, long long now,
-                        ProgressChoice choice, long long displayed_revision) {
+                        ProgressChoice choice, long long displayed_revision, const std::string& native_progress) {
     if(now<=0 || now>0x7fffffffffffffffLL/1000-1) throw std::runtime_error("Invalid device clock");
     const auto user=cloud.session().user_id;
     if(user.empty() || book.path.empty()) throw std::runtime_error("Download this book before syncing");
@@ -148,7 +148,7 @@ SyncAction sync_managed(Cloud& cloud, State& state, const ManagedBook& book,
         if(remote.updated_at>now*1000+5*60*1000)
             throw std::runtime_error("Readest timestamp is ahead; check the device clock");
         const auto stamp=std::max(now*1000,remote.updated_at+1);
-        auto payload=progress_payload(remote.config,book.book.hash,local,stamp);
+        auto payload=progress_payload(remote.config,book.book.hash,local,stamp,native_progress);
         auto response=cloud.post("/api/sync","{\"books\":[],\"notes\":[],\"configs\":["+payload+"]}",now);
         if(response.status!=200) throw std::runtime_error("Readest progress upload failed; retry to check its outcome");
         auto verified=fetch_progress(cloud,book.book.hash,now);

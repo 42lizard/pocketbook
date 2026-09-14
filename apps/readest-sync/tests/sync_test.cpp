@@ -100,6 +100,12 @@ void sync_checks() {
         assert(std::string(json_object_to_json_string(a)) == json_object_to_json_string(b));
     }
     json_object_put(result); json_object_put(original);
+    for(const auto& bad : {"[1,0]", "[-1,10]", "[11,10]", "[1.5,10]", "[1]", "{}", "[null,10]"}) {
+        bool rejected=false;
+        try { progress_payload(config,"fixture",charlie,124,bad); }
+        catch(const std::runtime_error&) { rejected=true; }
+        assert(rejected);
+    }
     for (const auto& bad : {"{}", "[]", "{", "{\"bookHash\":5}"}) {
         bool failed = false;
         try { progress_payload(bad, "fixture", charlie, 124); }

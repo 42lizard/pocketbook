@@ -92,6 +92,13 @@ snapshots. Runtime dependency and UI checks on InkPad remain necessary.
    Incoming progress is applied only by **Open**. When a Readest position is
    waiting, this button is labelled **Open at Readest position**.
 
+Outgoing position updates also carry PocketBook's current/total page counts for
+Readest's percentage display. Readest may recalculate that ratio when opening the
+book with its own pagination. The CFI remains the precise resume location; page
+counts never determine it. Missing native counts retain the remote display value.
+Already synchronized positions do not trigger another upload just to change the
+percentage; after upgrading, the next PocketBook page turn and sync updates both.
+
 If a downloaded book has no native settings yet, open and close it once, then
 sync. When positions conflict, choose **Use PocketBook position** or **Use
 Readest position**. A stale choice is rejected if either position has changed.

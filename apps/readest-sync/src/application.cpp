@@ -69,7 +69,7 @@ void ApplicationService::synchronize(const Request& request, OperationResult& re
     const bool open=request.command==Command::Open;
     bool synced=true;
     try {
-        result.sync_action=sync_managed(*cloud_,*state_,book,native.cfi,time(nullptr),request.choice,request.revision);
+        result.sync_action=sync_managed(*cloud_,*state_,book,native.cfi,time(nullptr),request.choice,request.revision,native.progress);
         result.outcome=Outcome::Synced;
     } catch(const std::exception& error) {
         if(!open || cancel.load()) throw;

@@ -296,6 +296,13 @@ NativePosition native_position(const std::string& snapshot, const std::string& b
     result.has_settings=true; result.profile_id=field(row,"profileid");
     result.raw_position=field(row,"position"); result.timestamp=field(row,"position_ts");
     result.cfi=point_cfi(result.raw_position);
+    try {
+        const auto c=field(row,"cpage"),t=field(row,"npage");
+        size_t ca=0,ta=0;
+        const auto current=std::stoll(c,&ca),total=std::stoll(t,&ta);
+        if(ca==c.size() && ta==t.size() && current>=0 && total>0 && current<=total)
+            result.progress="["+std::to_string(current)+","+std::to_string(total)+"]";
+    } catch(const std::exception&) { /* Unknown counts do not block position sync. */ }
     if(result.profile_id.empty() || (!result.raw_position.empty() && result.cfi.empty()))
         throw std::runtime_error("Unsupported native saved position");
     return result;

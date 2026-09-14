@@ -66,6 +66,14 @@ class ProbeTests(unittest.TestCase):
         output = subprocess.check_output([str(self.binary), str(self.explorer), str(self.books), path], text=True)
         return json.loads(output)
 
+    def test_native_sync_page_counts(self):
+        for current, total, expected in [(19, 207, '[19,207]'), (0, 207, '[0,207]'),
+                                         (208, 207, ''), (19, 0, ''), (None, 207, ''), (1.5, 207, '')]:
+            with sqlite3.connect(self.explorer) as db:
+                db.execute('UPDATE books_settings SET cpage=?, npage=?', (current, total))
+            result = subprocess.check_output([str(self.binary), 'native-progress', str(self.explorer), BOOK], text=True)
+            self.assertEqual(result.strip(), expected)
+
     def test_cfi_parser_and_native_database_read_only(self):
         before = [hashlib.sha256(p.read_bytes()).hexdigest() for p in [self.explorer, self.books]]
         result = self.inspect()

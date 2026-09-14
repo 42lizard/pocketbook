@@ -19,5 +19,6 @@ enum class ProgressChoice { Automatic, PocketBook, Readest };
 SyncAction sync_managed(Cloud& cloud, State& state, const ManagedBook& book,
                         const std::string& native_cfi, long long now,
                         ProgressChoice choice = ProgressChoice::Automatic,
-                        long long displayed_revision = 0);
+                        long long displayed_revision = 0,
+                        const std::string& native_progress = "");
 } // namespace readest

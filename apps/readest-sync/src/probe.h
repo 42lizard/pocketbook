@@ -39,6 +39,8 @@ void apply_readest_trial(const std::string& database, const std::string& backup_
 
 struct NativePosition {
     std::string book_path, book_id, profile_id, fast_hash, raw_position, timestamp, cfi;
+    // Display page counts from the same snapshot as the CFI, never a location.
+    std::string progress;
     bool indexed = false, has_settings = false;
 };
 // Read an app-owned snapshot after validating the managed EPUB bytes.

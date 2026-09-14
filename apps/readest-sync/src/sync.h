@@ -19,5 +19,6 @@ SyncAction reconcile(const SyncPositions& positions);
 std::string progress_payload(const std::string& remote_config,
                              const std::string& book_hash,
                              const std::string& local_cfi,
-                             long long updated_at);
+                             long long updated_at,
+                             const std::string& native_progress = "");
 } // namespace readest

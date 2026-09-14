@@ -43,7 +43,7 @@ SyncAction reconcile(const SyncPositions& p) {
 }
 
 std::string progress_payload(const std::string& input, const std::string& hash,
-                             const std::string& cfi, long long updated_at) {
+                             const std::string& cfi, long long updated_at, const std::string& native_progress) {
     if (hash.empty() || point_cfi(cfi).empty() || updated_at <= 0 || input.size() > 1024 * 1024)
         throw std::runtime_error("Invalid progress update");
     auto config = parse_json(input);
@@ -61,8 +61,20 @@ std::string progress_payload(const std::string& input, const std::string& hash,
     // Explicitly clear the competing KOReader representation on the server.
     json_object_object_add(config.get(), "xpointer", json_object_new_string(""));
     json_object_object_add(config.get(), "updatedAt", json_object_new_int64(updated_at));
-    // Native page counts do not map to Readest progress. Preserve that field;
-    // Readest must resolve the new CFI to derive its own display percentage.
+    if(!native_progress.empty()) {
+        auto pages=parse_json(native_progress);
+        if(json_object_get_type(pages.get())!=json_type_array || json_object_array_length(pages.get())!=2)
+            throw std::runtime_error("Invalid native page counts");
+        auto* current=json_object_array_get_idx(pages.get(),0);
+        auto* total=json_object_array_get_idx(pages.get(),1);
+        if(!current || !total || json_object_get_type(current)!=json_type_int || json_object_get_type(total)!=json_type_int ||
+            json_object_get_int64(current)<0 || json_object_get_int64(total)<=0 ||
+            json_object_get_int64(current)>json_object_get_int64(total))
+            throw std::runtime_error("Invalid native page counts");
+        // Readest displays this ratio until its reader recalculates pagination.
+        // The CFI, not the page ratio, continues to locate the reading position.
+        json_object_object_add(config.get(),"progress",pages.release());
+    }
     return json_object_to_json_string_ext(config.get(), JSON_C_TO_STRING_PLAIN);
 }
 } // namespace readest

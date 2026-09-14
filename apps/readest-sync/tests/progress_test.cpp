@@ -18,13 +18,14 @@ int main(int argc, char** argv) {
     assert(argc==3); const std::string root=argv[1], hash="81fbcb860e2eed5d223c359063680f87";
     const std::string alpha="epubcfi(/6/2!/4/2)", bravo="epubcfi(/6/4!/4/2)", charlie="epubcfi(/6/6!/4/2)";
     std::string location=alpha, xpointer, settings="{\"fontSize\":22}", posted;
+    std::string remote_pages="[15,44]",expected_pages=remote_pages;
     long long timestamp=1000000;
     int gets=0, posts=0, race=0; bool fail_post=false;
     auto wire=[&] {
         Json row(json_object_new_object(),json_object_put);
         for(const auto& field : {std::make_pair("user_id",std::string("user")), std::make_pair("book_hash",hash),
                 std::make_pair("location",location),std::make_pair("xpointer",xpointer),std::make_pair("view_settings",settings),
-                std::make_pair("search_config",std::string("{\"query\":\"keep me\"}")),std::make_pair("progress",std::string("[15,44]"))})
+                std::make_pair("search_config",std::string("{\"query\":\"keep me\"}")),std::make_pair("progress",remote_pages)})
             json_object_object_add(row.get(),field.first,json_object_new_string(field.second.c_str()));
         json_object_object_add(row.get(),"updated_at",json_object_new_int64(timestamp));
         return "{\"configs\":["+json_text(row.get())+"]}";
@@ -48,7 +49,8 @@ int main(int argc, char** argv) {
         location=string_member(config,"location"); xpointer=string_member(config,"xpointer"); timestamp=integer_member(config,"updatedAt");
         assert(json_text(member(config,"viewSettings"))==settings);
         assert(json_text(member(config,"searchConfig"))=="{\"query\":\"keep me\"}");
-        assert(json_text(member(config,"progress"))=="[15,44]");
+        remote_pages=json_text(member(config,"progress"));
+        assert(remote_pages==expected_pages);
         r.body="{}"; return r;
     };
     Cloud cloud(root+"/progress-session.json","ca","public","https://auth.test","https://api.test",api);
@@ -152,6 +154,19 @@ int main(int argc, char** argv) {
             (cleared_remote?SyncAction::Upload:SyncAction::ApplyRemote));
         assert(location==bravo);
     }
+    // Upload and server verification must carry display progress as well as CFI.
+    State pages_state(root+"/page-progress.db");
+    location=alpha; xpointer=""; timestamp=1000000; gets=posts=race=0; fail_post=false;
+    assert(sync_managed(cloud,pages_state,book,alpha,1030)==SyncAction::EstablishBaseline);
+    expected_pages="[19,207]";
+    assert(sync_managed(cloud,pages_state,book,bravo,1031,ProgressChoice::Automatic,0,expected_pages)==SyncAction::Upload);
+    assert(location==bravo && posts==1 && remote_pages==expected_pages);
+    const auto uploaded=pages_state.sync("user",hash);
+    assert(reading_percentage("{}",uploaded.remote_config)>9.17 && reading_percentage("{}",uploaded.remote_config)<9.18);
+    // An incoming location must preserve the cloud reader's page ratio.
+    location=charlie; ++timestamp; remote_pages="[27,270]";
+    assert(sync_managed(cloud,pages_state,book,bravo,1032,ProgressChoice::Automatic,0,"[19,207]")==SyncAction::ApplyRemote);
+    assert(posts==1 && reading_percentage("{}",pages_state.sync("user",hash).remote_config)==10);
     bool failed=false;
     try { parse_progress(wire(),"wrong-user",hash); } catch(const std::runtime_error&) { failed=true; }
     assert(failed);

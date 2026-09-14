@@ -158,6 +158,8 @@ HttpResponse https_request(const std::string& address,const std::string& method,
             if(!configs.contains(hash)) throw std::runtime_error("Unknown simulated book");
             auto row=configs[hash].toObject();
             row["location"]=incoming["location"]; row["xpointer"]=incoming["xpointer"];
+            if(incoming["progress"].isArray())
+                row["progress"]=QString::fromUtf8(QJsonDocument(incoming["progress"].toArray()).toJson(QJsonDocument::Compact));
             row["updated_at"]=incoming["updatedAt"];
             configs[hash]=row;
         }

@@ -154,6 +154,8 @@ int main(int argc,char** argv) {
     sim.turnReader(1); sim.closeReader(); finish(control);
     action(control,"Sync now"); assert(control.status().startsWith("PocketBook position uploaded"));
     assert(fetch_progress(observer,current().id.hash,time(nullptr)).location=="epubcfi(/6/4!/4/2)");
+    const auto uploaded_percentage=reading_percentage("{}",fetch_progress(observer,current().id.hash,time(nullptr)).config);
+    assert(uploaded_percentage>66 && uploaded_percentage<67);
     assert(database.find(scratch.path().toStdString())==0);
     assert(QFile::exists(QString::fromStdString(path)));
     // Download metadata is sufficient to recover a completed, unregistered file.
