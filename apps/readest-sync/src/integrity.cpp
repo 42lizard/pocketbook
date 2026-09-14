@@ -90,6 +90,27 @@ void check_encryption(xmlNode* n) {
 }
 }
 
+std::string epub_fingerprint(const std::string& path) {
+    int fd=open(path.c_str(),O_RDONLY|O_NOFOLLOW);
+    if(fd<0) throw std::runtime_error("Cannot open EPUB candidate");
+    FILE* raw=fdopen(fd,"rb");
+    if(!raw) { close(fd); throw std::runtime_error("Cannot read EPUB candidate"); }
+    const auto close_file=[](FILE* f) { fclose(f); };
+    std::unique_ptr<FILE,decltype(close_file)> file(raw,close_file);
+    struct stat st;
+    if(fstat(fd,&st)!=0 || !S_ISREG(st.st_mode) || st.st_size<=0 || st.st_size>256LL*1024*1024)
+        throw std::runtime_error("Unsupported EPUB candidate");
+    Digest partial(EVP_md5()); char bytes[1024];
+    for(int i=-1;i<=10;++i) {
+        const long long offset=i<0?0:1024LL<<(2*i);
+        if(offset>=st.st_size) break;
+        const auto count=static_cast<size_t>(std::min(1024LL,st.st_size-offset));
+        if(fseeko(raw,offset,SEEK_SET)!=0 || fread(bytes,1,count,raw)!=count)
+            throw std::runtime_error("Cannot fingerprint EPUB candidate");
+        partial.add(bytes,count);
+    }
+    return partial.finish();
+}
 BookIntegrity inspect_epub(const std::string& path) {
     int fd = open(path.c_str(), O_RDONLY | O_NOFOLLOW);
     if (fd < 0) throw std::runtime_error("Cannot open downloaded EPUB");
@@ -259,7 +280,8 @@ std::string xpointer_cfi(const std::string& path,const std::string& pointer) {
     struct stat st;
     if(fstat(fd,&st) || !S_ISREG(st.st_mode) || st.st_size<=0 || st.st_size>256LL*1024*1024) {close(fd);throw std::runtime_error("Invalid EPUB for XPointer conversion");}
     FILE* raw=fdopen(fd,"rb"); if(!raw){close(fd);throw std::runtime_error("Cannot read EPUB");}
-    std::unique_ptr<FILE,decltype(&fclose)> file(raw,fclose); Zip zip(raw,static_cast<size_t>(st.st_size));
+    const auto close_file=[](FILE* f) { fclose(f); };
+    std::unique_ptr<FILE,decltype(close_file)> file(raw,close_file); Zip zip(raw,static_cast<size_t>(st.st_size));
     auto container=xml(zip.read("META-INF/container.xml",1024*1024));
     auto* rootfile=child(child(xmlDocGetRootElement(container.get()),"rootfiles"),"rootfile");
     auto package_path=property(rootfile,"full-path");

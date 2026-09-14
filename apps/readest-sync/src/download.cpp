@@ -1,6 +1,8 @@
 #include "download.h"
 #include "json_util.h"
 #include <cerrno>
+#include <cstdio>
+#include <memory>
 #include <cctype>
 #include <fcntl.h>
 #include <map>
@@ -189,42 +191,38 @@ CoverFormat cover_format(const std::string& path) {
     if(fstat(fd,&st)!=0 || !S_ISREG(st.st_mode) || st.st_size<16 || st.st_size>2*1024*1024) {
         close(fd); return CoverFormat::None;
     }
-    std::vector<unsigned char> data(static_cast<size_t>(st.st_size)); size_t at=0;
-    while(at<data.size()) {
-        const auto n=read(fd,data.data()+at,data.size()-at);
-        if(n<0 && errno==EINTR) continue;
-        if(n<=0) { close(fd); return CoverFormat::None; }
-        at+=static_cast<size_t>(n);
-    }
-    close(fd);
+    FILE* raw=fdopen(fd,"rb");
+    if(!raw) { close(fd); return CoverFormat::None; }
+    const auto close_file=[](FILE* f) { fclose(f); };
+    std::unique_ptr<FILE,decltype(close_file)> file(raw,close_file);
     auto bounded=[](unsigned w,unsigned h) {
         return w>0 && h>0 && w<=4096 && h<=4096 && static_cast<unsigned long long>(w)*h<=4*1024*1024;
     };
+    unsigned char header[24]={};
+    const auto count=fread(header,1,sizeof(header),raw);
     const unsigned char signature[]={137,80,78,71,13,10,26,10};
-    if(data.size()>=24 && !std::memcmp(data.data(),signature,8) && !std::memcmp(data.data()+12,"IHDR",4)) {
+    if(count>=24 && !std::memcmp(header,signature,8) && !std::memcmp(header+12,"IHDR",4)) {
         auto integer=[](const unsigned char* p) { return (static_cast<unsigned>(p[0])<<24)|(static_cast<unsigned>(p[1])<<16)|(p[2]<<8)|p[3]; };
-        return bounded(integer(data.data()+16),integer(data.data()+20))?CoverFormat::PNG:CoverFormat::None;
+        return bounded(integer(header+16),integer(header+20))?CoverFormat::PNG:CoverFormat::None;
     }
-    // Readest's cover.png may contain an unchanged embedded JPEG. Inspect SOF
-    // dimensions before decoding; never select the decoder from the filename.
-    if(data[0]!=0xff || data[1]!=0xd8) return CoverFormat::None;
-    at=2;
-    while(at<data.size()) {
-        if(data[at++]!=0xff) return CoverFormat::None;
-        while(at<data.size() && data[at]==0xff) ++at;
-        if(at>=data.size()) break;
-        const auto marker=data[at++];
-        if(marker==0xda || marker==0xd9 || marker==0) break;
+    if(header[0]!=0xff || header[1]!=0xd8 || fseeko(raw,2,SEEK_SET)!=0) return CoverFormat::None;
+    // Only inspect marker headers; skip compressed image data and metadata bodies.
+    while(ftello(raw)<st.st_size) {
+        if(fgetc(raw)!=0xff) break;
+        int marker; do { marker=fgetc(raw); } while(marker==0xff);
+        if(marker<0 || marker==0xda || marker==0xd9 || marker==0) break;
         if(marker==1 || (marker>=0xd0 && marker<=0xd7)) continue;
-        if(at+2>data.size()) break;
-        const size_t length=(data[at]<<8)|data[at+1];
-        if(length<2 || length>data.size()-at) break;
+        const auto at=ftello(raw);
+        const int hi=fgetc(raw),lo=fgetc(raw);
+        if(hi<0 || lo<0) break;
+        const int length=(hi<<8)|lo;
+        if(length<2 || length>st.st_size-at) break;
         if(marker>=0xc0 && marker<=0xcf && marker!=0xc4 && marker!=0xc8 && marker!=0xcc) {
-            if(length<8) break;
-            const unsigned h=(data[at+3]<<8)|data[at+4],w=(data[at+5]<<8)|data[at+6];
-            return bounded(w,h)?CoverFormat::JPEG:CoverFormat::None;
+            unsigned char sof[6];
+            if(length<8 || fread(sof,1,sizeof(sof),raw)!=sizeof(sof)) break;
+            return bounded((sof[3]<<8)|sof[4],(sof[1]<<8)|sof[2])?CoverFormat::JPEG:CoverFormat::None;
         }
-        at+=length;
+        if(fseeko(raw,length-2,SEEK_CUR)!=0) break;
     }
     return CoverFormat::None;
 }
@@ -235,10 +233,18 @@ bool cache_cover(Cloud& cloud,const std::string& root,const std::string& hash,co
     const auto path=cover_path(root,cloud.session().user_id,hash,files);
     if(path.empty()) throw std::runtime_error("Invalid cover identity");
     if(valid_cover(path)) return true;
+    const auto missing=path+".missing";
+    struct stat missing_stat;
+    if(lstat(missing.c_str(),&missing_stat)==0 && S_ISREG(missing_stat.st_mode) &&
+       missing_stat.st_mtime<=now && now-missing_stat.st_mtime<6*60*60) return false;
+    auto remember_missing=[&] {
+        int fd=open(missing.c_str(),O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW,0600);
+        if(fd>=0) close(fd);
+    };
     // Readest resolves this canonical key even when the stored filename differs.
     const auto key=files.cover_key.empty()?cloud.session().user_id+"/Readest/Books/"+hash+"/cover.png":files.cover_key;
     auto resolved=cloud.get("/api/storage/download?fileKey="+encode(key),now);
-    if(resolved.status==404) return false;
+    if(resolved.status==404) { remember_missing(); return false; }
     if(resolved.status!=200) throw std::runtime_error("Cannot obtain cover download URL");
     auto body=parse_json(resolved.body);
     const auto url=string_member(body.get(),"downloadUrl");
@@ -249,7 +255,7 @@ bool cache_cover(Cloud& cloud,const std::string& root,const std::string& hash,co
     try {
         const size_t cap=files.cover_size?static_cast<size_t>(files.cover_size):2*1024*1024;
         auto response=transfer(url,fd,ca,cap);
-        if(response.status==404) { close(fd); fd=-1; unlink(name.data()); return false; }
+        if(response.status==404) { close(fd); fd=-1; unlink(name.data()); remember_missing(); return false; }
         if(response.status!=200 || response.bytes>cap || (files.cover_size && response.bytes!=static_cast<size_t>(files.cover_size)) || fsync(fd)!=0 || !valid_cover(name.data()))
             throw std::runtime_error("Cover image unavailable");
         close(fd); fd=-1;

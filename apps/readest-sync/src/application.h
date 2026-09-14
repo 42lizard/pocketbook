@@ -28,10 +28,11 @@ struct LibrarySnapshot {
     std::string account;
     std::vector<LibraryEntry> books;
 };
-enum class Command { Initialize, SignIn, SignOut, Refresh, Scan, Download, Sync, Open, ReadOffline, Resume };
+enum class Command { Initialize, SignIn, SignOut, Refresh, Scan, Download, Sync, Open, ReadOffline, Resume, Covers };
 struct Request {
     Command command=Command::Initialize;
     BookId book;
+    std::vector<BookId> books;
     std::string email, password;
     ProgressChoice choice=ProgressChoice::Automatic;
     long long revision=0;
@@ -40,6 +41,7 @@ enum class Outcome { Ready, SessionInvalid, SignedIn, SignedOut, Refreshed, Scan
     Synced, LocalOpen, SyncUnavailable, NeedsNativeSettings, Applied, Failed, Cancelled };
 struct OperationResult {
     LibrarySnapshot library;
+    std::vector<std::pair<BookId,std::string>> cover_updates;
     Outcome outcome=Outcome::Ready;
     SyncAction sync_action=SyncAction::None;
     long long revision=0;

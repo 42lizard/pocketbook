@@ -116,7 +116,8 @@ directories prevent books with the same name from overwriting each other.
 Existing downloads keep their filenames and reading positions.
 
 Existing EPUBs on internal storage and SD card are matched to the Readest library
-by content hash at startup, during refresh, and before a download. Matching books
+by content hash during refresh and before a download. Startup displays the cached
+library without a device-wide scan. Matching books
 are registered at their original paths; they are not copied, renamed, or modified.
 Use **Scan device** to find newly copied books without Wi-Fi. Scans run in the
 background and can be cancelled; large collections take longer to inspect.
@@ -128,6 +129,21 @@ Each managed download has a metadata file recording its account, Readest book
 hash, original-byte SHA-256, size and filename. Recovery validates completed
 unregistered downloads after restart. Unknown/partial files are left untouched;
 invalid metadata or duplicate local copies are reported.
+
+## Large libraries
+
+Discovery persists candidate fingerprints keyed by path, size, device/inode and
+modification/change timestamps. Unchanged candidates need no EPUB content reads.
+New candidates use Readest's bounded partial fingerprint (at most twelve 1 KiB
+samples). Only matching candidates undergo full SHA-256 and archive validation
+before registration. Opening and syncing still verify the original EPUB bytes.
+Matches and candidate-index updates are each committed as a batch.
+
+The library snapshot loads saved sync metadata in one query and native percentages
+in one grouped query. Cover checks read headers rather than whole image files.
+The scale regression uses 500 valid EPUBs totaling roughly 500 MiB and checks
+content-read/validation counts, cache persistence, path invalidation and new cloud
+matches. It prints host timings as diagnostics; these are not device timings.
 
 ## Local checks
 
@@ -228,10 +244,12 @@ above the tiles. Availability filters combine with search and reset pagination.
 
 Choose **Refresh library** once after installing this update. It checks the
 account's paginated storage listing and saves availability for offline browsing.
-Cloud covers are downloaded and cached during refresh. When the storage listing
+Cloud covers are downloaded for visible tiles in the background after refresh,
+not for the entire library before it becomes usable. Book actions take priority
+over this background work. When the storage listing
 has no cover entry, the app also asks Readest for its canonical cover key, as
-Readest itself does. The refresh summary reports cached/downloaded covers,
-missing cloud covers (HTTP 404), and failed requests separately. PNG and JPEG are
+Readest itself does. Confirmed missing covers (HTTP 404) are remembered for six hours, or until the
+listed cover version changes, to avoid repeated requests. PNG and JPEG are
 recognized from their contents, including JPEG images stored as `cover.png`. Local EPUBs can also
 use PocketBook's native cover loader. Missing/unsupported covers show a title
 placeholder; cover failures do not prevent library use or book downloads.

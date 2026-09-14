@@ -27,7 +27,10 @@ int main(int argc,char** argv) {
     int requests=0;
     config.transport=[&](const std::string& url,const std::string&,const std::vector<std::string>&,
         const std::string&,const std::string&,size_t) {
-        ++requests; assert(url.find("grant_type=password")!=std::string::npos);
+        ++requests;
+        if(url.find("/api/sync?")!=std::string::npos) { HttpResponse r; r.status=200; r.body=R"({"books":[]})"; return r; }
+        if(url.find("/api/storage/list?")!=std::string::npos) { HttpResponse r; r.status=200; r.body=R"({"page":1,"totalPages":1,"files":[]})"; return r; }
+        assert(url.find("grant_type=password")!=std::string::npos);
         HttpResponse response; response.status=200;
         response.body=R"({"access_token":"dummy-access","refresh_token":"dummy-refresh","expires_at":9999999999,"user":{"id":"fixture-user"}})";
         return response;
@@ -54,8 +57,12 @@ int main(int argc,char** argv) {
     // Read preparation catches changes rather than handing an unverified path to the device.
     { std::ofstream output(local,std::ios::binary|std::ios::app); output<<"changed"; }
     result=service.execute(request,cancel); assert(result.outcome==Outcome::Failed && result.open_path.empty());
+    // Metadata refresh must not perform a per-book cover request.
+    const auto before_refresh=requests;
+    request.command=Command::Refresh; result=service.execute(request,cancel);
+    assert(result.outcome==Outcome::Refreshed && requests==before_refresh+2);
     request.command=Command::SignOut; result=service.execute(request,cancel);
     assert(result.outcome==Outcome::SignedOut && !result.library.signed_in && result.library.books.empty());
-    assert(access(local.c_str(),F_OK)==0 && requests==1);
+    assert(access(local.c_str(),F_OK)==0 && requests==before_refresh+2);
     std::cout<<"Headless application session recovery, identity, EPUB reuse, offline open and cancellation checks passed.\n";
 }

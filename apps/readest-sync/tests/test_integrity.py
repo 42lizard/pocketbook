@@ -75,6 +75,22 @@ with tempfile.TemporaryDirectory(prefix='readest-integrity-') as folder:
     application_command += [str(APP / 'src/application.cpp'), str(APP / 'src/probe.cpp')]
     subprocess.run(application_command, check=True)
     subprocess.run([str(application_binary), str(root), str(original)], check=True)
+    scale_root = root / 'scale'
+    scale_root.mkdir()
+    with zipfile.ZipFile(original) as source:
+        entries = [(info, source.read(info.filename)) for info in source.infolist()]
+    for number in range(500):
+        with zipfile.ZipFile(scale_root / f'{number:03}.epub', 'w') as target:
+            for info, content in entries:
+                if info.filename.endswith('.opf'):
+                    content = content.replace(b'</dc:title>', f' {number}</dc:title>'.encode())
+                target.writestr(info, content)
+            target.writestr('scale-payload.txt', str(number).encode().ljust(1024 * 1024, b'x'))
+    scale_binary = root / 'scale-check'
+    scale_command = [str(APP / 'tests/scan_scale_test.cpp') if value == str(APP / 'tests/download_test.cpp')
+                     else str(scale_binary) if value == str(download_binary) else value for value in download_command]
+    subprocess.run(scale_command, check=True)
+    subprocess.run([str(scale_binary), str(scale_root), str(scale_root / '499.epub')], check=True)
     data = original.read_bytes()
     output = subprocess.check_output([str(binary), str(original)], text=True).splitlines()
     assert output == ['81fbcb860e2eed5d223c359063680f87', hashlib.sha256(data).hexdigest(), str(len(data))]

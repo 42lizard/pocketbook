@@ -115,6 +115,7 @@ int main(int argc,char** argv) {
     observer.sign_in("demo@example.test","demo",time(nullptr));
     action(control,"Refresh library");
     assert(control.library()->entries().size()==51 && control.library()->pages()==9);
+    settle(1500); // Only the visible covers load after the metadata refresh completes.
     assert(!control.library()->at(0).cover.empty());
     sim.network(3); control.refreshLibrary(); assert(control.busy()); finish(control);
     assert(control.status().toStdString().find("timed out")!=std::string::npos);

@@ -79,10 +79,16 @@ Availability book_availability(const ManagedBook& book) {
 }
 size_t discover_device_books(State& state, const std::string& user,
     const std::vector<std::string>& roots, const std::string& managed_root,
-    const std::function<bool()>& cancelled) {
-    std::set<std::string> needed;
-    for (const auto& book : state.books(user))
+    const std::function<bool()>& cancelled, ScanMetrics* metrics) {
+    std::set<std::string> needed,known;
+    for (const auto& book : state.books(user)) {
         if (book.path.empty() && !book.book.deleted) needed.insert(book.book.hash);
+        else if(!book.path.empty()) known.insert(book.path);
+    }
+    if(needed.empty()) { if(metrics) *metrics={}; return 0; }
+    const auto cached=state.scan_cache(); ScanCache updates;
+    std::vector<StoredBook> matches;
+    ScanMetrics measured;
     size_t matched = 0;
     std::vector<std::string> pending(roots.rbegin(), roots.rend());
     while (!pending.empty() && !needed.empty()) {
@@ -108,14 +114,36 @@ size_t discover_device_books(State& state, const std::string& user,
         auto extension = path.substr(path.size() - 5);
         for (auto& c : extension) if (c >= 'A' && c <= 'Z') c += 32;
         if (extension != ".epub") continue;
-        StoredBook book; book.path = path;
-        try { book.integrity = inspect_epub(path); }
-        catch (const std::runtime_error&) { continue; } // An unrelated invalid EPUB must not stop discovery.
-        if (!needed.count(book.integrity.readest_hash)) continue;
-        if (cancelled()) throw std::runtime_error("Cancelled.");
-        state.register_download(user, book.integrity.readest_hash, book);
-        needed.erase(book.integrity.readest_hash); ++matched;
+        if(known.count(path)) continue;
+        ++measured.candidates;
+#ifdef __APPLE__
+        const auto modified=st.st_mtimespec,changed=st.st_ctimespec;
+#else
+        const auto modified=st.st_mtim,changed=st.st_ctim;
+#endif
+        const auto stamp=std::to_string(st.st_dev)+":"+std::to_string(st.st_ino)+":"+std::to_string(st.st_size)+":"+
+            std::to_string(modified.tv_sec)+":"+std::to_string(modified.tv_nsec)+":"+
+            std::to_string(changed.tv_sec)+":"+std::to_string(changed.tv_nsec);
+        std::string hash;
+        const auto previous=cached.find(path);
+        if(previous!=cached.end() && previous->second.first==stamp) { hash=previous->second.second; ++measured.cache_hits; }
+        else {
+            ++measured.fingerprints;
+            try { hash=epub_fingerprint(path); } catch(const std::runtime_error&) { continue; }
+            updates[path]={stamp,hash};
+        }
+        if(!needed.count(hash)) continue;
+        StoredBook book; book.path=path; ++measured.validations;
+        try { book.integrity=inspect_epub(path); }
+        catch(const std::runtime_error&) { updates[path]={stamp,""}; continue; }
+        if(book.integrity.readest_hash!=hash) { updates[path]={stamp,book.integrity.readest_hash}; continue; }
+        if(cancelled()) throw std::runtime_error("Cancelled.");
+        matches.push_back(book); needed.erase(hash); ++matched;
     }
+    if(cancelled()) throw std::runtime_error("Cancelled.");
+    state.register_downloads(user,matches);
+    state.save_scan_cache(updates);
+    if(metrics) *metrics=measured;
     return matched;
 }
 State::State(const std::string& path) {
@@ -137,6 +165,7 @@ State::State(const std::string& path) {
             "CREATE TABLE IF NOT EXISTS downloads(user TEXT NOT NULL,hash TEXT NOT NULL,path TEXT NOT NULL,sha256 TEXT NOT NULL,size INTEGER NOT NULL,PRIMARY KEY(user,hash));"
             "CREATE TABLE IF NOT EXISTS sync(user TEXT NOT NULL,hash TEXT NOT NULL,local TEXT NOT NULL,remote TEXT NOT NULL,last_local TEXT NOT NULL,last_remote TEXT NOT NULL,baseline INTEGER NOT NULL,pending TEXT NOT NULL,config TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(user,hash));"
             "CREATE TABLE IF NOT EXISTS book_files(user TEXT NOT NULL,hash TEXT NOT NULL,epubs INTEGER NOT NULL,cover_key TEXT NOT NULL,cover_size INTEGER NOT NULL,cover_stamp INTEGER NOT NULL,PRIMARY KEY(user,hash));"
+            "CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,stamp TEXT NOT NULL,hash TEXT NOT NULL);"
             "PRAGMA user_version=1; COMMIT;");
     } catch (...) { sqlite3_close(db_); db_ = nullptr; throw; }
 }
@@ -193,7 +222,8 @@ void State::register_download(const std::string& user, const std::string& hash, 
         book.integrity.sha256.find_first_not_of("0123456789abcdef")!=std::string::npos ||
         book.path.empty() || book.path.find('\0')!=std::string::npos || book.integrity.size<=0)
         throw std::runtime_error("Invalid downloaded book state");
-    sql(db_, "BEGIN IMMEDIATE");
+    const bool own=sqlite3_get_autocommit(db_);
+    if(own) sql(db_, "BEGIN IMMEDIATE");
     try {
         Query existing(db_, "SELECT path,sha256 FROM downloads WHERE user=? AND hash=?");
         existing.bind(1,user); existing.bind(2,hash);
@@ -219,8 +249,44 @@ void State::register_download(const std::string& user, const std::string& hash, 
             Query l(db_, "INSERT OR IGNORE INTO library(user,hash,title) VALUES(?,?,?)");
             l.bind(1,user); l.bind(2,hash); l.bind(3,hash); l.row();
         }
-        sql(db_, "COMMIT");
-    } catch (...) { sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); throw; }
+        if(own) sql(db_, "COMMIT");
+    } catch (...) { if(own) sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); throw; }
+}
+ScanCache State::scan_cache() {
+    ScanCache cache; Query q(db_,"SELECT path,stamp,hash FROM scan_cache");
+    while(q.row()) cache[q.text(0)]={q.text(1),q.text(2)};
+    return cache;
+}
+void State::save_scan_cache(const ScanCache& updates) {
+    if(updates.empty()) return;
+    sql(db_,"BEGIN IMMEDIATE");
+    try {
+        for(const auto& item:updates) {
+            Query q(db_,"INSERT OR REPLACE INTO scan_cache VALUES(?,?,?)");
+            q.bind(1,item.first); q.bind(2,item.second.first); q.bind(3,item.second.second); q.row();
+        }
+        sql(db_,"COMMIT");
+    } catch(...) { sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr); throw; }
+}
+void State::register_downloads(const std::string& user,const std::vector<StoredBook>& books) {
+    if(books.empty()) return;
+    sql(db_,"BEGIN IMMEDIATE");
+    try {
+        for(const auto& book:books) register_download(user,book.integrity.readest_hash,book);
+        sql(db_,"COMMIT");
+    } catch(...) { sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr); throw; }
+}
+std::map<std::string,SavedSync> State::syncs(const std::string& user) {
+    std::map<std::string,SavedSync> result;
+    Query q(db_,"SELECT local,remote,last_local,last_remote,baseline,pending,config,revision,hash FROM sync WHERE user=?");
+    q.bind(1,user);
+    while(q.row()) {
+        SavedSync s;
+        s.positions.local=q.text(0); s.positions.remote=q.text(1); s.positions.last_local=q.text(2); s.positions.last_remote=q.text(3);
+        s.positions.has_baseline=q.number(4)!=0; s.pending_remote=q.text(5); s.remote_config=q.text(6); s.revision=q.number(7);
+        result[q.text(8)]=std::move(s);
+    }
+    return result;
 }
 SavedSync State::sync(const std::string& user, const std::string& hash) {
     identity(user,hash); SavedSync s;
@@ -250,13 +316,16 @@ std::vector<std::string> recover_downloads(State& state, const std::string& user
     if (!raw) throw std::runtime_error("Cannot scan downloaded books");
     auto close_directory = [](DIR* d) { closedir(d); };
     std::unique_ptr<DIR, decltype(close_directory)> directory(raw, close_directory);
-    std::set<std::string> known;
-    for (const auto& b : state.books(user)) if (!b.path.empty()) known.insert(b.path);
+    std::set<std::string> known,known_dirs;
+    for (const auto& b : state.books(user)) if (!b.path.empty()) {
+        known.insert(b.path); known_dirs.insert(b.path.substr(0,b.path.rfind('/')));
+    }
     std::vector<std::string> warnings;
     while (auto* e = readdir(raw)) {
         const std::string name=e->d_name;
         if (name.size()!=39 || name[32]!='-' || name.substr(0,32).find_first_not_of("0123456789abcdef")!=std::string::npos) continue;
         const auto dir=root+"/"+name; struct stat st;
+        if(known_dirs.count(dir)) continue;
         if (lstat(dir.c_str(),&st)!=0 || !S_ISDIR(st.st_mode)) continue;
         try {
             if(lstat((dir+"/readest.json").c_str(),&st)!=0) continue; // Partial attempt, not a book.

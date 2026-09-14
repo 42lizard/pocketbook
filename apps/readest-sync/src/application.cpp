@@ -36,10 +36,12 @@ LibrarySnapshot ApplicationService::snapshot() {
     result.signed_in=cloud_ && cloud_->session().signed_in();
     if(!result.signed_in) return result;
     result.account=cloud_->session().user_id;
+    const auto syncs=state_->syncs(result.account);
     std::vector<std::string> paths;
     for(const auto& book:state_->books(result.account)) {
         LibraryEntry entry; entry.id={result.account,book.book.hash}; entry.book=book;
-        entry.availability=book_availability(book); entry.sync=state_->sync(result.account,book.book.hash);
+        entry.availability=book_availability(book);
+        const auto saved=syncs.find(book.book.hash); if(saved!=syncs.end()) entry.sync=saved->second;
         entry.remote_percentage=reading_percentage(book.book.raw,entry.sync.remote_config);
         const auto image=cover_path(config_.root,result.account,book.book.hash,book.files);
         if(valid_cover(image)) entry.cover=image;
@@ -112,7 +114,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
             if(cloud_->session().signed_in()) {
                 const auto warnings=recover_downloads(*state_,cloud_->session().user_id,config_.books_root);
                 if(!warnings.empty()) result.recovery_warning=warnings.front();
-                scan(cancel);
+                // Startup serves cached metadata; discovery is explicit or part of Refresh.
             }
         } else {
             if(!cloud_ || !state_) throw std::runtime_error("Initialize the app first.");
@@ -120,7 +122,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                 cloud_->sign_in(request.email,request.password,time(nullptr));
                 const auto warnings=recover_downloads(*state_,cloud_->session().user_id,config_.books_root);
                 if(!warnings.empty()) result.recovery_warning=warnings.front();
-                scan(cancel); result.outcome=Outcome::SignedIn;
+                result.outcome=Outcome::SignedIn;
             } else if(request.command==Command::SignOut) {
                 cloud_->sign_out(); result.outcome=Outcome::SignedOut;
             } else {
@@ -139,13 +141,6 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                     } catch(const std::exception& e) { check_cancel(cancel); result.metadata_error=e.what(); }
                     scan(cancel);
                     state_->save_book_files(cloud_->session().user_id,fetch_book_files(*cloud_,time(nullptr)));
-                    for(const auto& book:state_->books(cloud_->session().user_id)) {
-                        check_cancel(cancel); if(book.book.deleted) continue;
-                        try {
-                            if(cache_cover(*cloud_,config_.root,book.book.hash,book.files,config_.ca,time(nullptr))) ++result.covers;
-                            else ++result.absent;
-                        } catch(const std::exception&) { check_cancel(cancel); ++result.failed_covers; }
-                    }
                     result.outcome=Outcome::Refreshed; break;
                 }
                 case Command::Scan: result.matched=scan(cancel); result.outcome=Outcome::Scanned; break;
@@ -162,6 +157,22 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                     const auto book=resolve(request.book); verify(book); check_cancel(cancel);
                     result.open_path=book.path; result.outcome=Outcome::LocalOpen; break;
                 }
+                case Command::Covers: {
+                    if(request.books.size()>6) throw std::runtime_error("Too many visible covers");
+                    const auto books=state_->books(cloud_->session().user_id);
+                    for(const auto& id:request.books) {
+                        check_cancel(cancel);
+                        if(id.account!=cloud_->session().user_id) continue;
+                        for(const auto& book:books) if(book.book.hash==id.hash && !book.book.deleted) {
+                            try {
+                                if(cache_cover(*cloud_,config_.root,id.hash,book.files,config_.ca,time(nullptr)))
+                                    result.cover_updates.push_back({id,cover_path(config_.root,id.account,id.hash,book.files)});
+                            } catch(const std::exception&) { check_cancel(cancel); }
+                            break;
+                        }
+                    }
+                    break;
+                }
                 case Command::Resume: break;
                 default: break;
                 }
@@ -172,7 +183,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
         result.outcome=cancel.load()?Outcome::Cancelled:Outcome::Failed;
     }
     // Recovery/read errors never escape the worker completion boundary.
-    if(!cancel.load()) try { result.library=snapshot(); }
+    if(request.command!=Command::Covers && !cancel.load()) try { result.library=snapshot(); }
     catch(const std::exception& error) { result.outcome=Outcome::Failed; result.error=error.what(); result.open_path.clear(); }
     return result;
 }

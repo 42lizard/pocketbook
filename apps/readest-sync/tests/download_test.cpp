@@ -2,6 +2,7 @@
 #include "json_util.h"
 #include "state.h"
 #include <cassert>
+#include <ctime>
 #include <dirent.h>
 #include <fstream>
 #include <iterator>
@@ -21,12 +22,12 @@ int main(int argc, char** argv) {
     std::string root = std::string(argv[1]) + "/managed", bytes = read(argv[2]);
     assert(mkdir(root.c_str(), 0700) == 0);
     const std::string hash = "81fbcb860e2eed5d223c359063680f87";
-    int mode = 0, downloads = 0, signed_requests = 0;
+    int mode = 0, downloads = 0, signed_requests = 0, api_requests=0;
     auto api = [&](const std::string& url, const std::string&, const std::vector<std::string>&,
                    const std::string&, const std::string&, size_t) {
-        HttpResponse r; r.status = 200;
+        ++api_requests; HttpResponse r; r.status = 200;
         if (url.find("grant_type=password") != std::string::npos)
-            r.body = R"({"access_token":"dummy-access","refresh_token":"dummy-refresh","expires_at":99999,"user":{"id":"fixture-user"}})";
+            r.body = R"({"access_token":"dummy-access","refresh_token":"dummy-refresh","expires_at":9999999999,"user":{"id":"fixture-user"}})";
         else if (url.find("/api/storage/list?") != std::string::npos) {
             assert(url.find("bookHash=" + hash) != std::string::npos);
             std::string file = "{\"file_key\":\"fixture-user/Readest/Books/" + hash +
@@ -261,4 +262,17 @@ int main(int argc, char** argv) {
     category.epubs = 2; assert(book_availability(category) == Availability::Multiple);
     category.book.format = "PDF"; assert(book_availability(category) == Availability::Unavailable);
     category.book.deleted = true; assert(book_availability(category) == Availability::Removed);
+    // Missing covers are not queried once per refresh forever. A new cover version or TTL retries.
+    mode=6; BookFiles missing_cover;
+    const auto now=std::time(nullptr); const auto calls=api_requests;
+    const std::string absent_hash(32,'c');
+    assert(!cache_cover(cloud,root,absent_hash,missing_cover,"test-ca",now,unknown_transfer));
+    assert(!cache_cover(cloud,root,absent_hash,missing_cover,"test-ca",now,unknown_transfer));
+    assert(api_requests==calls+1);
+    missing_cover.cover_stamp=1;
+    assert(!cache_cover(cloud,root,absent_hash,missing_cover,"test-ca",now,unknown_transfer));
+    assert(api_requests==calls+2);
+    assert(!cache_cover(cloud,root,absent_hash,missing_cover,"test-ca",now+6*60*60+1,unknown_transfer));
+    assert(api_requests==calls+3);
+
 }

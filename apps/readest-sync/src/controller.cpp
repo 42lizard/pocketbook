@@ -23,7 +23,7 @@ QString resultMessage(const OperationResult& result) {
     case Outcome::SignedOut: return "Signed out. Downloaded files are retained.";
     case Outcome::Refreshed:
         if(!result.metadata_error.empty()) return "File availability updated. Library metadata refresh failed: "+QString::fromStdString(result.metadata_error);
-        return QString("Library refreshed. Covers: %1; not in cloud: %2; failed: %3.").arg(result.covers).arg(result.absent).arg(result.failed_covers);
+        return "Library refreshed. Visible covers load in the background.";
     case Outcome::Scanned: return QString("Device scan complete. Matched %1 existing EPUBs.").arg(result.matched);
     case Outcome::Downloaded: return "Downloaded and verified. Choose Open to read.";
     case Outcome::Reused: return "Found a matching EPUB on device. Choose Open to read.";
@@ -53,6 +53,7 @@ QString operationMessage(Command command) {
     case Command::Open: return "Opening book";
     case Command::ReadOffline: return "Opening PocketBook position";
     case Command::Resume: return "Updating PocketBook progress";
+    case Command::Covers: return "Loading covers";
     }
     return {};
 }
@@ -92,21 +93,36 @@ QVariantList AppController::actions() const {
     add("back","Back to library"); return result;
 }
 void AppController::submit(Request request) {
-    if(busy()) return;
+    if(runner_.busy()) {
+        if(background_ && request.command!=Command::Covers) { pending_request_.reset(new Request(std::move(request))); runner_.cancel(); emit changed(); }
+        return;
+    }
+    background_=request.command==Command::Covers;
     const bool online=request.command==Command::SignIn || request.command==Command::Refresh || request.command==Command::Download ||
-        request.command==Command::Sync || request.command==Command::Open;
+        request.command==Command::Sync || request.command==Command::Open || request.command==Command::Covers;
     const auto message=operationMessage(request.command);
     // The completion captures no credentials. Service work cannot mutate presentation state.
-    Request context; context.command=request.command; context.book=request.book; context.choice=request.choice;
+    Request context; context.command=request.command; context.book=request.book; context.choice=request.choice; context.books=request.books;
     const auto service=service_;
     const bool started=runner_.start([service,request=std::move(request)](const std::atomic<bool>& cancel) {
         return service->execute(request,cancel);
     },online,[this,context](OperationResult result) { complete(context,std::move(result)); },
     [this,message](bool connecting) { busy_message_=connecting?QStringLiteral("Connecting to Wi-Fi"):message; ++cover_generation_; emit changed(); });
+    if(!started && background_) { background_=false; return; }
     if(!started) { status_="The previous Wi-Fi connection is still finishing. Try again shortly."; emit changed(); }
 }
 void AppController::complete(const Request& request,OperationResult result) {
     if(exiting_) { QCoreApplication::quit(); return; }
+    if(request.command==Command::Covers) {
+        background_=false;
+        for(const auto& update:result.cover_updates) library_.setCover(update.first,QString::fromStdString(update.second));
+        if(result.outcome==Outcome::Cancelled) for(const auto& id:request.books) attempted_covers_.erase(id.account+"/"+id.hash);
+        if(pending_request_) { auto next=std::move(*pending_request_); pending_request_.reset(); submit(std::move(next)); }
+        else prepareCovers();
+        return;
+    }
+    if(request.command==Command::Refresh && result.outcome==Outcome::Refreshed) { load_cloud_covers_=true; attempted_covers_.clear(); }
+    if(request.command==Command::SignOut) { load_cloud_covers_=false; attempted_covers_.clear(); }
     if(result.library.initialized) {
         initialized_=true; signed_in_=result.library.signed_in;
         library_.replace(std::move(result.library.books));
@@ -129,17 +145,27 @@ void AppController::complete(const Request& request,OperationResult result) {
 }
 void AppController::prepareCovers() {
     const auto generation=++cover_generation_;
-    if(busy() || detail() || !device_.prepareCover) return;
+    if(busy() || detail()) return;
     for(int row=0;row<library_.rowCount();++row) {
         const auto id=library_.at(row).id;
         QTimer::singleShot(row,this,[this,generation,id] {
             if(generation!=cover_generation_ || busy()) return;
             const auto* entry=library_.find(id);
             if(!entry || !entry->cover.empty() || entry->availability!=Availability::OnDevice) return;
-            const auto image=device_.prepareCover(*entry);
+            const auto image=device_.prepareCover?device_.prepareCover(*entry):QString();
             if(!image.isEmpty()) library_.setCover(id,image);
         });
     }
+    if(load_cloud_covers_ && !runner_.busy()) QTimer::singleShot(0,this,[this,generation] {
+        if(generation!=cover_generation_ || runner_.busy() || detail()) return;
+        Request request; request.command=Command::Covers;
+        for(int row=0;row<library_.rowCount() && request.books.size()<6;++row) {
+            const auto& entry=library_.at(row);
+            const auto key=entry.id.account+"/"+entry.id.hash;
+            if(entry.cover.empty() && !entry.book.book.deleted && attempted_covers_.insert(key).second) request.books.push_back(entry.id);
+        }
+        if(!request.books.empty()) submit(std::move(request));
+    });
 }
 void AppController::initialize() { if(!initialized_) submit(Request{}); }
 void AppController::signIn(const QString& email,const QString& password) {

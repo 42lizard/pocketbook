@@ -91,7 +91,19 @@ int main(int argc,char** argv) {
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
     QGuiApplication app(argc,argv); runnerChecks();
     QTemporaryDir temp; assert(temp.isValid());
-    const auto config=configAt(temp.path());
+    auto config=configAt(temp.path());
+    std::atomic<int> cover_requests{0}; bool cover_scenario=false;
+    const auto transport=config.transport;
+    config.transport=[&](const std::string& url,const std::string& method,const std::vector<std::string>& headers,
+        const std::string& body,const std::string& ca,size_t cap) {
+        if(cover_scenario) {
+            HttpResponse r; r.status=200;
+            if(url.find("/api/sync?")!=std::string::npos) { r.body=R"({"books":[]})"; return r; }
+            if(url.find("/api/storage/list?")!=std::string::npos) { r.body=R"({"page":1,"totalPages":1,"files":[]})"; return r; }
+            if(url.find("/api/storage/download?")!=std::string::npos) { ++cover_requests; QThread::msleep(300); r.status=404; return r; }
+        }
+        return transport(url,method,headers,body,ca,cap);
+    };
     std::string first_hash;
     {
         State state(config.root+"/state.db"); LibraryPage page; page.cursor=1;
@@ -184,6 +196,13 @@ int main(int argc,char** argv) {
     }
     control.selectBook("fixture-user",QString::fromStdString(first_hash)); settle();
     assert(control.actions().size()==4); control.back();
+    cover_scenario=true;
+    control.refreshLibrary(); finish(control);
+    assert(control.status().startsWith("Library refreshed"));
+    settle(450);
+    assert(!control.busy() && cover_requests>0); // Background cover work leaves library interaction available.
+    control.scanDevice(); assert(control.busy()); finish(control);
+    assert(control.status().startsWith("Device scan complete") && cover_requests<=2); // Foreground work interrupts the cover batch.
     control.signOut(); finish(control); settle();
     assert(window->findChild<QObject*>("emailInput") && window->findChild<QObject*>("passwordInput"));
     assert(!warnings);

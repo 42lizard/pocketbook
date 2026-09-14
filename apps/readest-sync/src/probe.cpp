@@ -304,13 +304,17 @@ std::map<std::string,double> native_percentages(const std::string& snapshot,
                                                const std::vector<std::string>& paths) {
     Database db(snapshot);
     std::map<std::string,double> result;
-    for(const auto& path:paths) {
-        auto ids=query(db,native_identify,path_parameters(path));
-        if(json_object_array_length(ids.get())!=1) continue;
-        auto rows=query(db,"SELECT cpage,npage FROM books_settings WHERE bookid=?",
-            {field(json_object_array_get_idx(ids.get(),0),"book_id")});
-        if(json_object_array_length(rows.get())!=1) continue;
-        auto* row=json_object_array_get_idx(rows.get(),0);
+    const std::set<std::string> wanted(paths.begin(),paths.end());
+    auto rows=query(db,
+        "WITH identities AS (SELECT DISTINCT f.book_id,hex(f.fast_hash) AS hash,f.filename,d.name FROM files f "
+        "JOIN folders d ON d.id=f.folder_id AND d.storageid=f.storageid), "
+        "unique_paths AS (SELECT filename,name,MIN(book_id) AS book_id FROM identities GROUP BY filename,name HAVING COUNT(*)=1), "
+        "unique_settings AS (SELECT bookid,MIN(cpage) AS cpage,MIN(npage) AS npage FROM books_settings GROUP BY bookid HAVING COUNT(*)=1) "
+        "SELECT p.filename,p.name,s.cpage,s.npage FROM unique_paths p JOIN unique_settings s ON s.bookid=p.book_id");
+    for(size_t i=0;i<json_object_array_length(rows.get());++i) {
+        auto* row=json_object_array_get_idx(rows.get(),i);
+        const auto path=field(row,"name")+"/"+field(row,"filename");
+        if(!wanted.count(path)) continue;
         try {
             const auto c=field(row,"cpage"),t=field(row,"npage");
             size_t ca=0,ta=0;
