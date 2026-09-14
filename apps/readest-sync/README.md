@@ -16,6 +16,40 @@ position safeguards, reconciliation, and Qt UI behavior. The device acceptance
 checklist is at the end of this README. Diagnostic fixture generation and the
 backup-and-verify installer are described below.
 
+## Application structure
+
+QML screens use named commands and explicit controller properties. Library tiles
+come from `LibraryModel`, whose roles include account/hash identity, availability,
+cover path and both reading percentages. Search, availability filtering and paging
+operate on this in-memory model; the view supplies its page capacity.
+
+`AppController` owns navigation, the selected book identity, conflict choices and
+user-facing messages. It never reads SQLite, performs transfers or checks EPUBs.
+`ApplicationService` owns the cloud client and app database and implements
+initialize/sign-in, refresh, discovery, download-or-reuse, sync and open preparation.
+It is part of the Qt-free `readest-core` library and returns structured outcomes
+and library snapshots. A book request is validated against its signed-in account.
+
+`OperationRunner` runs one operation at a time, joins it before publishing its
+result, and owns cancellation, network timeout and keepalive timing. Device
+connection callbacks retain their own lifetime token: a late callback cannot
+access a destroyed runner, and a pending firmware connection blocks another
+connection attempt. Cloud and app-state access stays inside service operations;
+the UI only sees completed snapshots. Shutdown cancels and joins outstanding work.
+
+The device adapter supplies paths, Wi-Fi, reader handoff and local cover access.
+Native handoff runs on the UI thread after a successful operation. Local cover
+extraction is deferred device work for visible books, separate from rendering;
+model getters perform no filesystem or database I/O. Cloud cover decoding remains
+in the bounded image provider. Screens and shared QML controls are separate files.
+
+Tests link production sources normally. The integrity suite includes a headless
+application test with no Qt or network dependency. Qt tests exercise public
+commands, independent controller instances, stable book identities, filtering,
+worker shutdown and late callbacks; simulator scenarios cover native sync and
+reader handoff. This refactor does not change persisted formats or native-position
+validation rules. Hardware acceptance of the refactored build is still required.
+
 ## Build and package
 
 Run from the repository root:

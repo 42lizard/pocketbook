@@ -12,7 +12,7 @@ add_custom_target(simulator-fixtures DEPENDS "${CMAKE_BINARY_DIR}/fixtures/ready
 add_dependencies(readest-sync simulator-fixtures)
 target_compile_definitions(readest-sync PRIVATE READEST_SIM_FIXTURES="${CMAKE_BINARY_DIR}/fixtures")
 target_sources(qt-ui-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/http.cpp")
-add_executable(simulator-test "${READEST_SIM_DIR}/test.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/controller.h" ${DEVICE_SOURCE} "${CMAKE_CURRENT_SOURCE_DIR}/qml/readest.qrc")
+add_executable(simulator-test "${READEST_SIM_DIR}/test.cpp" ${PRESENTATION_SOURCES} ${DEVICE_SOURCE} "${CMAKE_CURRENT_SOURCE_DIR}/qml/readest.qrc")
 target_compile_definitions(simulator-test PRIVATE READEST_DESKTOP READEST_SIMULATOR READEST_TEST_CONTROLS="${POCKETBOOK_SIM_CONTROLS}" READEST_SIM_FIXTURES="${CMAKE_BINARY_DIR}/fixtures")
 target_include_directories(simulator-test PRIVATE "${READEST_SIM_DIR}")
 target_link_libraries(simulator-test PRIVATE pocketbook-simulator simulator-https readest-core Qt6::Quick Qt6::Qml Qt6::Gui Qt6::Core)

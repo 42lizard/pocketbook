@@ -51,7 +51,7 @@ DeviceOverlay {
             Label { width: parent.width; text: "Cloud service"; font.bold: true }
             Row {
                 width: parent.width; spacing: 12
-                enabled: !appController.view.busy && simulator.readerPath.length === 0
+                enabled: !appController.busy && simulator.readerPath.length === 0
                 opacity: enabled ? 1 : 0.5
                 Button { width: (parent.width - 12) / 2; text: "Mock cloud"; selected: !simulator.realCloud; onClicked: simulator.switchCloud(false) }
                 Button { width: (parent.width - 12) / 2; text: "Real Readest"; selected: simulator.realCloud; onClicked: simulator.switchCloud(true) }
@@ -60,7 +60,7 @@ DeviceOverlay {
             Button {
                 visible: !simulator.realCloud
                 text: "Sign in to demo account"
-                enabled: !appController.view.busy && !appController.view.signedIn
+                enabled: !appController.busy && !appController.signedIn
                 opacity: enabled ? 1 : 0.5
                 onClicked: { appController.signIn("demo@example.test", "demo"); overlay.panelOpen = false }
             }

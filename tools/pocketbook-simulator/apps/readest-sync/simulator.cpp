@@ -204,7 +204,7 @@ Simulator::Simulator() { simulator=this; }
 Simulator::~Simulator() { simulator=nullptr; }
 bool Simulator::realCloud() const { return realCloudMode(); }
 void Simulator::switchCloud(bool real) {
-    if(real==realCloud() || !controller_ || controller_->view()["busy"].toBool() || !path_.isEmpty()) return;
+    if(real==realCloud() || !controller_ || controller_->busy() || !path_.isEmpty()) return;
     try {
         writeFile(storageBase()+"/cloud-mode",real?"real":"mock");
         qputenv("POCKETBOOK_SIM_CLOUD",real?"real":"mock");

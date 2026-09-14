@@ -1,12 +1,18 @@
 #include <QTemporaryDir>
 #include <QByteArray>
-// Select scratch storage before the controller's file-scope paths initialize.
-static QTemporaryDir scratch("/tmp/readest-simulator-test-XXXXXX");
-static const bool configured=qputenv("POCKETBOOK_SIM_ROOT",scratch.path().toUtf8());
-#include "controller.cpp"
-#define main desktop_app_entry
-#include "main.cpp"
-#undef main
+#include "controller.h"
+#include "cover_provider.h"
+#include "platform.h"
+#include "simulator.h"
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickWindow>
+#include <QDir>
+#include <QFile>
+#include <fcntl.h>
+#include <unistd.h>
+using namespace readest;
 #include <QElapsedTimer>
 #include <QQuickItem>
 #include <QThread>
@@ -17,27 +23,40 @@ static void settle(int milliseconds=100) {
     QElapsedTimer timer; timer.start();
     while(timer.elapsed()<milliseconds) { QCoreApplication::processEvents(); QThread::msleep(1); }
 }
-static void finish() {
+static void finish(AppController& control) {
     QElapsedTimer timer; timer.start();
-    while(busy && timer.elapsed()<15000) settle(10);
-    if(busy) std::cerr<<"Timed out: "<<busy_message<<"\n";
-    assert(!busy);
+    while(control.busy() && timer.elapsed()<15000) settle(10);
+    if(control.busy()) std::cerr<<"Timed out: "<<control.status().toStdString()<<"\n";
+    assert(!control.busy());
 }
 static void action(AppController& control,const std::string& label) {
-    for(size_t i=0;i<buttons.size();++i) if(buttons[i].first==label) { control.activate(i); finish(); return; }
-    std::cerr<<"Missing action: "<<label<<"; status: "<<status<<"\n";
+    if(label=="Refresh library") { control.refreshLibrary(); finish(control); return; }
+    for(const auto& item:control.actions()) {
+        const auto action=item.toMap();
+        if(action["text"].toString().toStdString()==label) { control.runAction(action["command"].toString()); finish(control); return; }
+    }
+    std::cerr<<"Missing action: "<<label<<"; status: "<<control.status().toStdString()<<"\n";
     assert(false);
 }
 
 int main(int argc,char** argv) {
-    assert(configured && scratch.isValid());
+    QTemporaryDir scratch("/tmp/readest-simulator-test-XXXXXX");
+    assert(scratch.isValid()); qputenv("POCKETBOOK_SIM_ROOT",scratch.path().toUtf8());
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
     QGuiApplication app(argc,argv);
     Simulator sim; sim.prepare();
-    AppController control;
+    auto config=deviceApplicationConfig();
+    auto device=deviceAccess(); device.connectionTimeoutMs=500;
+    AppController control(config,device);
+    const auto root=config.root,books_root=config.books_root,database=config.database;
+    Cloud observer(root+"/observer-session.json",config.ca,config.public_key);
+    BookId chosen;
+    auto pick=[&](int row) { chosen=control.library()->at(row).id; control.selectBook(QString::fromStdString(chosen.account),QString::fromStdString(chosen.hash)); };
+    auto current=[&]() -> const LibraryEntry& { const auto* entry=control.library()->find(chosen); assert(entry); return *entry; };
+    auto count=[&] { return control.library()->count(); };
     QQmlApplicationEngine engine;
     engine.addImportPath(READEST_TEST_CONTROLS);
-    engine.addImageProvider("cover",new CoverProvider);
+    engine.addImageProvider("cover",new CoverProvider(QString::fromStdString(root)));
     engine.rootContext()->setContextProperty("appController",&control);
     engine.rootContext()->setContextProperty("screenWidth",1404);
     engine.rootContext()->setContextProperty("screenHeight",1800);
@@ -52,7 +71,7 @@ int main(int argc,char** argv) {
         assert(QDir().mkpath(scratch.path()+"/system/readest-sync"));
         QFile mock(scratch.path()+"/system/readest-sync/session.json");
         assert(mock.open(QIODevice::WriteOnly)); mock.write("mock-session-sentinel"); mock.close();
-        control.initialize(); finish(); assert(initialized && !signed_in);
+        control.initialize(); finish(control); assert(control.initialized() && !control.signedIn());
         assert(root==scratch.path().toStdString()+"/real-cloud/system/readest-sync");
         const auto url=qEnvironmentVariable("SIM_TEST_URL").toStdString();
         const auto certificate=qEnvironmentVariable("SIM_TEST_CA").toStdString();
@@ -87,92 +106,92 @@ int main(int argc,char** argv) {
         std::cout<<"Real cloud routing, TLS, credential forwarding, downloads, profile isolation and reader guards passed.\n";
         return 0;
     }
-    control.initialize(); finish(); assert(initialized && !signed_in);
-    sim.network(1); control.signIn("demo@example.test","demo"); finish();
-    assert(!signed_in && status.find("Wi-Fi connection failed")!=std::string::npos);
-    sim.network(0); control.signIn("demo@example.test","demo"); finish();
-    if(!signed_in) std::cerr<<"Sign-in failed: "<<status<<"\n";
-    assert(signed_in);
+    control.initialize(); finish(control); assert(control.initialized() && !control.signedIn());
+    sim.network(1); control.signIn("demo@example.test","demo"); finish(control);
+    assert(!control.signedIn() && control.status().toStdString().find("Wi-Fi connection failed")!=std::string::npos);
+    sim.network(0); control.signIn("demo@example.test","demo"); finish(control);
+    if(!control.signedIn()) std::cerr<<"Sign-in failed: "<<control.status().toStdString()<<"\n";
+    assert(control.signedIn());
+    observer.sign_in("demo@example.test","demo",time(nullptr));
     action(control,"Refresh library");
-    assert(library.size()==51 && control.view()["pages"].toInt()==9);
-    assert(!control.view()["books"].toList()[0].toMap()["cover"].toString().isEmpty());
-    sim.network(3); control.activate(0); assert(connecting && connection_pending);
-    connection_deadline=Clock::now()-std::chrono::seconds(1); finish();
-    assert(status.find("timed out")!=std::string::npos && connection_pending);
-    control.activate(0); assert(status.find("still finishing")!=std::string::npos);
+    assert(control.library()->entries().size()==51 && control.library()->pages()==9);
+    assert(!control.library()->at(0).cover.empty());
+    sim.network(3); control.refreshLibrary(); assert(control.busy()); finish(control);
+    assert(control.status().toStdString().find("timed out")!=std::string::npos);
+    control.refreshLibrary(); assert(control.status().toStdString().find("still finishing")!=std::string::npos);
     sim.releaseNetwork(); sim.network(0); action(control,"Refresh library");
     sim.transfer(2); action(control,"Refresh library");
-    assert(status.find("503")!=std::string::npos && library.size()==51);
+    assert(control.status().toStdString().find("503")!=std::string::npos && control.library()->entries().size()==51);
     sim.transfer(0);
     // A cancelled slow transfer never reaches the fixture response.
     sim.transfer(1);
     std::atomic<bool> cancelled{true};
     set_http_cancellation(&cancelled);
     bool cancellation_observed=false;
-    try { cloud->get("/api/sync?type=books&since=0",time(nullptr)); }
+    try { observer.get("/api/sync?type=books&since=0",time(nullptr)); }
     catch(const std::exception& error) { cancellation_observed=std::string(error.what())=="Cancelled."; }
     set_http_cancellation(nullptr); sim.transfer(0); assert(cancellation_observed);
     // Both transfer failures must leave no installed book or partial directory.
-    control.activate(2);
+    pick(0);
     for(int mode:{3,4}) {
         sim.transfer(mode); action(control,"Download EPUB");
-        assert(library[selected_book].path.empty());
+        assert(current().book.path.empty());
         assert(QDir(QString::fromStdString(books_root)).entryList(QDir::Dirs|QDir::NoDotAndDotDot).empty());
     }
     sim.transfer(0); action(control,"Download EPUB");
-    assert(!library[selected_book].path.empty());
-    const auto path=library[selected_book].path;
+    assert(!current().book.path.empty());
+    const auto path=current().book.path;
     action(control,"Read offline"); assert(!sim.readerPath().isEmpty() && sim.chapter()==1);
-    sim.closeReader(); finish();
-    action(control,"Sync now"); assert(last_action==SyncAction::EstablishBaseline);
-    sim.remoteChapter(2); action(control,"Sync now"); assert(last_action==SyncAction::ApplyRemote);
+    sim.closeReader(); finish(control);
+    action(control,"Sync now"); assert(control.status()=="Reading positions are synchronized.");
+    sim.remoteChapter(2); action(control,"Sync now"); assert(control.status().startsWith("Readest position downloaded"));
     action(control,"Open at Readest position"); assert(sim.chapter()==2 && !sim.readerPath().isEmpty());
-    sim.turnReader(1); sim.closeReader(); finish();
-    sim.remoteChapter(1); action(control,"Sync now"); assert(last_action==SyncAction::Conflict);
+    sim.turnReader(1); sim.closeReader(); finish(control);
+    sim.remoteChapter(1); action(control,"Sync now"); assert(control.status().startsWith("Both positions differ"));
     action(control,"Use Readest position");
     action(control,"Open at Readest position"); assert(sim.chapter()==1);
-    sim.turnReader(1); sim.closeReader(); finish();
-    action(control,"Sync now"); assert(last_action==SyncAction::Upload);
-    assert(fetch_progress(*cloud,library[selected_book].book.hash,time(nullptr)).location=="epubcfi(/6/4!/4/2)");
+    sim.turnReader(1); sim.closeReader(); finish(control);
+    action(control,"Sync now"); assert(control.status().startsWith("PocketBook position uploaded"));
+    assert(fetch_progress(observer,current().id.hash,time(nullptr)).location=="epubcfi(/6/4!/4/2)");
     assert(database.find(scratch.path().toStdString())==0);
     assert(QFile::exists(QString::fromStdString(path)));
     // Download metadata is sufficient to recover a completed, unregistered file.
     State recovered((scratch.path()+"/recovery.db").toStdString());
-    auto page=fetch_library_page(*cloud,0,100,time(nullptr));
-    recovered.apply_page(cloud->session().user_id,0,page);
-    assert(recover_downloads(recovered,cloud->session().user_id,books_root).empty());
+    auto page=fetch_library_page(observer,0,100,time(nullptr));
+    recovered.apply_page(observer.session().user_id,0,page);
+    assert(recover_downloads(recovered,observer.session().user_id,books_root).empty());
     bool found=false;
-    for(const auto& book:recovered.books(cloud->session().user_id)) if(book.path==path) found=true;
+    for(const auto& book:recovered.books(observer.session().user_id)) if(book.path==path) found=true;
     assert(found);
     // Reinitializing fixture services must preserve remote and native positions.
     sim.prepare();
-    assert(fetch_progress(*cloud,library[selected_book].book.hash,time(nullptr)).location=="epubcfi(/6/4!/4/2)");
+    assert(fetch_progress(observer,current().id.hash,time(nullptr)).location=="epubcfi(/6/4!/4/2)");
     assert(readest::native_position(database,path).cfi=="epubcfi(/6/4!/4/2)");
     action(control,"Back to library");
     // Link a progress-only book offline, retaining its existing native position.
     const auto existing=QString::fromStdString(platform::bookRoots().front())+"/Existing book.epub";
     assert(QFile::copy(QStringLiteral(READEST_SIM_FIXTURES)+"/01.epub",existing));
     const auto existing_hash=readest::inspect_epub(existing.toStdString()).readest_hash;
-    assert(sim.open(existing)); sim.turnReader(1); sim.closeReader(); finish();
+    assert(sim.open(existing)); sim.turnReader(1); sim.closeReader(); finish(control);
     const auto before=readest::native_position(database,existing.toStdString()).cfi;
     const auto managed_dirs=QDir(QString::fromStdString(books_root)).entryList(QDir::Dirs|QDir::NoDotAndDotDot);
-    sim.network(1); control.scanDevice(); finish();
-    control.setAvailabilityFilter(2); assert(visible.size()==2);
-    for(size_t i=0;i<visible.size();++i) if(library[visible[i]].book.hash==existing_hash) {
-        control.activate(static_cast<int>(2+i)); break;
+    sim.network(1); control.scanDevice(); finish(control);
+    control.setAvailabilityFilter(2); assert(static_cast<size_t>(count())==2);
+    for(int i=0;i<control.library()->rowCount();++i) if(control.library()->at(i).id.hash==existing_hash) {
+        pick(i); break;
     }
-    assert(detail && library[selected_book].path==existing.toStdString() && library[selected_book].epubs==0);
+    assert(control.detail() && current().book.path==existing.toStdString() && current().book.epubs==0);
     action(control,"Read offline"); assert(sim.readerPath()==existing);
-    sim.closeReader(); finish();
+    sim.closeReader(); finish(control);
     assert(readest::native_position(database,existing.toStdString()).cfi==before);
     assert(QDir(QString::fromStdString(books_root)).entryList(QDir::Dirs|QDir::NoDotAndDotDot)==managed_dirs);
     action(control,"Back to library"); control.setAvailabilityFilter(0); sim.network(0);
     // A file copied after the last scan also prevents a download, even if cloud requests fail.
-    control.search("04 ·"); assert(visible.size()==1); control.activate(2);
+    control.search("04 ·"); assert(static_cast<size_t>(count())==1); pick(0);
     const auto late=QString::fromStdString(platform::bookRoots().front())+"/Copied later.epub";
     assert(QFile::copy(QStringLiteral(READEST_SIM_FIXTURES)+"/03.epub",late));
     sim.transfer(2); action(control,"Download EPUB");
-    assert(library[selected_book].path==late.toStdString());
+    assert(current().book.path==late.toStdString());
     assert(QDir(QString::fromStdString(books_root)).entryList(QDir::Dirs|QDir::NoDotAndDotDot)==managed_dirs);
     sim.transfer(0); action(control,"Back to library"); control.search("");
     auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); assert(window);
@@ -184,7 +203,7 @@ int main(int argc,char** argv) {
     for(bool wide:{false,true}) {
         if(wide) sim.rotate();
         settle();
-        assert(control.view()["pages"].toInt()==(wide?13:9));
+        assert(control.library()->pages()==(wide?13:9));
         for(int i=0;i<13;++i) control.turnPage(1);
         settle();
         auto picture=window->grabWindow(); assert(!picture.isNull());
