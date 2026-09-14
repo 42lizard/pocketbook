@@ -1,0 +1,838 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: qtdeclarative-everywhere-src
+Source: https://download.qt.io/archive/qt/*/submodules/
+Files-Excluded: tests/auto/qml/ecmascripttests/test262/website/scripts/lib/jquery-1.4.2.min.js
+
+Files: *
+Copyright: 2016-2021 The Qt Company Ltd.
+License: LGPL-3 or GPL-2
+
+Files: *.qdoc
+Copyright: 2017 The Qt Company Ltd.
+License: GFDL-NIV-1.3
+
+Files: src/qmlcompiler/*
+       src/qmldebug/qqmlenginedebugclient_p.h
+       src/qmldebug/qqmlenginedebugclient.cpp
+       src/qmldom/qqmldomcomments_p.h
+       src/qmldom/qqmldomcomments.cpp
+       src/qmltyperegistrar/*
+       src/quickcontrolstestutils/controlstestutils.cpp
+       src/quickcontrolstestutils/controlstestutils_p.h
+       src/quicktestutils/qml/platforminputcontext_p.h
+       src/quicktestutils/qml/platformquirks_p.h
+       src/quicktestutils/qml/qmlutils.cpp
+       src/quicktestutils/qml/qmlutils_p.h
+       src/quicktestutils/qml/testhttpserver.cpp
+       src/quicktestutils/qml/testhttpserver_p.h
+       src/quicktestutils/quick/*
+       tests/*
+       tools/*
+Copyright: 2016-2021 The Qt Company Ltd.
+License: GPL-3 with Qt-1.0 exception
+
+Files: examples/*
+       src/qml/doc/snippets/*
+       src/qml/doc/src/includes/qqmlcomponent.qdoc
+       src/qmlmodels/doc/snippets/*
+       src/qmltest/doc/snippets/*
+       src/qmlworkerscript/doc/snippets/*
+       src/quick/doc/snippets/*
+       tests/auto/cmake/test_import_static_shapes_plugin_resources/app.qml
+       tests/auto/cmake/test_import_static_shapes_plugin_resources/tst_main.cpp
+       tests/auto/qml/qmlbasicapp/main.qml
+       tests/auto/qml/qqmllanguage/data/*
+       tests/auto/qml/qqmlsqldatabase/data/changeVersion.qml
+       tests/auto/qmltest/animatedimage/tst_animatedimage.qml
+       tests/auto/qmltest/animations/tst_abstractanimationjobcrash.qml
+       tests/auto/qmltest/fontloader/tst_fontloader.qml
+       tests/auto/qmltest/gradient/tst_gradient.qml
+       tests/auto/qmltest/image/tst_image.qml
+       tests/auto/qmltest/layout/*
+       tests/auto/qmltest/listmodel/tst_listmodel.qml
+       tests/auto/qmltest/listview/*
+       tests/auto/qmltest/objectmodel/tst_objectmodel.qml
+       tests/auto/qmltest/positioners/tst_positioners.qml
+       tests/auto/qmltest/qtbug46798/tst_qtbug46798.qml
+       tests/auto/qmltest/rectangle/tst_rectangle.qml
+       tests/auto/qmltest/text/tst_text.qml
+       tests/auto/qmltest/textedit/tst_textedit.qml
+       tests/auto/qmltest/textedit/tst_textedit_editingfinished.qml
+       tests/auto/qmltest/textinput/tst_textinput.qml
+       tests/auto/qmltest/url/tst_url.qml
+       tests/auto/qmltest/window/tst_clickwindow.qml
+       tests/auto/quick/qquickbehaviors/data/qtbug21549-2.qml
+       tests/auto/quick/qquickdroparea/data/*
+       tests/auto/quick/qquickgridview/data/attachedProperties.qml
+       tests/auto/quick/qquickgridview/data/margins2.qml
+       tests/auto/quick/qquickgridview/data/qtbug49218.qml
+       tests/auto/quick/qquicklayouts/data/*
+       tests/auto/quick/qquicklistview/data/addoncompleted.qml
+       tests/auto/quick/qquicklistview/data/attachedProperties.qml
+       tests/auto/quick/qquicklistview/data/flickBothDirections.qml
+       tests/auto/quick/qquicklistview/data/moveObjectModelItemToAnotherObjectModel.qml
+       tests/auto/quick/qquicklistview/data/outsideViewportChangeNotAffectingView.qml
+       tests/auto/quick/qquicklistview/data/qtbug61537_modelChangesAsync.qml
+       tests/auto/quick/qquicklistview/data/resizeAfterComponentComplete.qml
+       tests/auto/quick/qquicklistview/data/reusedelegateitems.qml
+       tests/auto/quick/qquicklistview/data/roundingErrors.qml
+       tests/auto/quick/qquicklistview/data/setpositiononlayout.qml
+       tests/auto/quick/qquicklistview/data/sizeTransitions.qml
+       tests/auto/quick/qquicklistview/data/stickyPositioning-both.qml
+       tests/auto/quick/qquicklistview/data/stickyPositioning-footer.qml
+       tests/auto/quick/qquicklistview/data/stickyPositioning-header.qml
+       tests/auto/quick/qquicklistview2/data/delegateWithMouseArea.qml
+       tests/auto/quick/qquicklistview2/data/urlListModel.qml
+       tests/auto/quick/qquickpalette/data/*
+       tests/auto/quick/qquickpathview/data/*
+       tests/benchmarks/qml/holistic/data/largeTargets/*
+       tests/manual/highdpi/imageprovider.cpp
+       tests/manual/nodetypes_ng/*
+       tests/manual/pointer/content/TouchpointFeedbackSprite.qml
+       tests/manual/shapestest/shapestest.qml
+       tests/manual/syntaxhighlighter/*
+       tests/manual/tableview/imagetiling/imageTiling.qml
+       tests/manual/text/*
+       tests/manual/touch/*
+       tests/testapplications/animatedsprite/*
+       tests/testapplications/listview/*
+Copyright: 2016-2021 The Qt Company Ltd.
+License: BSD-3-clause
+
+Files: tests/manual/v4/typedarrays.js
+       tests/manual/v4/v8-bench.js
+Copyright: 2012 the V8 project authors
+License: BSD-3-clause
+
+Files: tests/auto/qml/ecmascripttests/test262/*
+Copyright: 2012-2017 Ecma International
+           1998 Robert D. Cameron
+           2009-2011 the Sputnik authors
+           2011-2012 Google Inc.
+           2011-2012 Norbert Lindenberg
+           2011-2018 the V8 project authors
+           2012-2018 Mozilla Corporation
+           2013-2017 Microsoft Corporation
+           2014 Hank Yates
+           2014 Ryan Lewis
+           2014 Sam Mikes
+           2014 Thomas Dahlstrom
+           2014-2015 Cubane Canada, Inc.
+           2014-2018 André Bargull
+           2014-2018 Valerie Young
+           2015 Zirak
+           2015-2017 Caitlin Potter
+           2015-2018 Jordan Harband
+           2015-2018 Leonardo Balter (Leo Balter)
+           2015-2018 Mike Pennisi
+           2015-2018 Rick Waldron
+           2016 Jeff Morrison
+           2016 Tim Disney
+           2016-2017 Aleksey Shvayka
+           2016-2017 Apple Inc.
+           2016-2017 Kevin Gibbons
+           2016-2017 Mathias Bynens
+           2016-2017 Robin Templeton
+           2016-2017 The V8 Project authors
+           2016-2018 Michael Ficarra
+           2017 Caio Lima
+           2017 Claude Pache
+           2017 Corey Frang
+           2017 Daniel Ehrenberg
+           2017 Ivan Vyshnevskyi
+           2017 Josh Wolfe
+           2017 K. Adam White
+           2017 Lucas Azzola
+           2017 Lyza Danger Gardner
+           2017 Michael "Z" Goddard
+           2017 Tooru Fujisawa
+           2017-2018 Igalia, S.L.
+           2018 Amal Hussein
+           2018 Shilpi Jain
+           2018 Viktor Mukhachev
+License: BSD-3-clause-Ecma
+
+Files: tests/auto/qml/parserstress/tests/ecma*
+       tests/auto/qml/parserstress/tests/shell.js
+Copyright: 1998-2003 Netscape Communications Corporation
+License: MPL-1.1 and GPL-2+ and LGPL-2.1
+
+Files: tests/auto/qml/ecmascripttests/test262/website/scripts/lib/jqueryprogressbar.js
+Copyright: 2007 Josh Bush
+License: Expat
+
+Files: tests/manual/v4/crypto.js
+Copyright: 2003-2005 Tom Wu
+License: Expat
+
+Files: tests/auto/qml/qqmllistmodelworkerscript/data/listmodel_async_sort/ListModelSortWorker.mjs
+       tests/auto/qml/qqmllistmodelworkerscript/data/listmodel_async_sort/ListModelSort.mjs
+       tests/auto/qml/qqmllistmodelworkerscript/data/listmodel_async_sort/ListModelSort.qml
+Copyright: 2020 Esri
+License: Apache-2.0
+
+Files: src/quick/doc/snippets/qml/windowconstraints.qml
+Copyright: 2017 The Qt Company Ltd.
+License: GFDL-NIV-1.3
+
+Files: debian/*
+Copyright: 2022-2025 Patrick Franz <deltaone@debian.org>
+License: LGPL-3 or GPL-2
+
+# Auto-generated rules for non-3rdparty code
+# Use debian/scripts/update-copyright in cleaned source tree root to update it.
+## BEGIN AUTO GENERATED BLOCK
+
+## BSD-3-clause
+
+Files: tests/auto/qmltest/fuzzycompare/tst_FuzzyCompare.qml
+Copyright: 2021 Alexander Akulich <akulichalexander@gmail.com>
+License: BSD-3-clause
+
+Files: tests/auto/qml/qqmllanguage/data/singleton/RegisteredCompositeSingletonType.qml
+       tests/auto/qml/qqmllanguage/data/singleton/js/jspragma.js
+       tests/auto/qml/qqmllanguage/data/singletonTest17.qml
+       tests/manual/qmltypememory/TestPlugin/plugin.cpp
+Copyright: 2013 BlackBerry Limited (formerly Research In Motion)
+License: BSD-3-clause
+
+Files: examples/quick/imageresponseprovider/imageresponseprovider-example.qml
+       examples/quick/imageresponseprovider/imageresponseprovider.cpp
+       tests/auto/qml/qqmlecmascript/data/singletonTest.qml
+       tests/auto/qml/qqmlecmascript/data/singletonTest2.qml
+       tests/auto/quick/qquickshadereffect/data/MyIcon.qml
+       tests/auto/quick/qquickshadereffect/data/twoImagesOneShaderEffect.qml
+Copyright: 2013-2016 Canonical, Ltd.
+License: BSD-3-clause
+
+Files: examples/quick/shared/LauncherList.qml
+Copyright: 2017 Crimson AS <info@crimson.no>
+           2017 The Qt Company Ltd.
+License: BSD-3-clause
+
+Files: examples/quick/scenegraph/twotextureproviders/main.cpp
+       examples/quick/scenegraph/twotextureproviders/main.qml
+       examples/quick/scenegraph/twotextureproviders/xorblender.cpp
+       examples/quick/scenegraph/twotextureproviders/xorblender.h
+       src/quick/doc/snippets/qml/layerblending.qml
+Copyright: 2014 Gunnar Sletta <gunnar@sletta.org>
+License: BSD-3-clause
+
+Files: tests/manual/tableview/storagemodel/storagemodel.cpp
+       tests/manual/tableview/storagemodel/storagemodel.h
+Copyright: 2016 Ivan Komissarov <ABBAPOH@gmail.com>
+           2016 The Qt Company Ltd.
+License: BSD-3-clause
+
+Files: tests/auto/quick/qquicktext/data/lineLayoutImplicitWidth.qml
+Copyright: 2019 Jolla Ltd.
+License: BSD-3-clause
+
+Files: tests/auto/quick/qquickpathview/data/qtbug37815.qml
+       tests/auto/quick/qquickpathview/data/qtbug53464.qml
+Copyright: 2016 Netris
+License: BSD-3-clause
+
+## GFDL-NIV-1.3
+
+Files: src/qmlmodels/doc/src/qtqmlmodel.qdoc
+Copyright: 2016 BlackBerry Limited (formerly Research In Motion)
+License: GFDL-NIV-1.3
+
+Files: examples/quick/imageresponseprovider/doc/src/imageresponseprovider.qdoc
+Copyright: 2015 Canonical, Ltd.
+License: GFDL-NIV-1.3
+
+Files: examples/quick/scenegraph/twotextureproviders/doc/src/twotextureproviders.qdoc
+Copyright: 2014 Gunnar Sletta <gunnar@sletta.org>
+License: GFDL-NIV-1.3
+
+Files: src/qmltest/doc/src/toucheventsequence.qdoc
+Copyright: 2016 Jeremy Katz
+License: GFDL-NIV-1.3
+
+## GPL-3
+
+Files: tests/auto/qml/debugger/qqmldebugtranslationclient/data/MultiTextElement.qml
+       tests/auto/qml/debugger/qqmldebugtranslationclient/data/MultiTextException.qml
+       tests/auto/qml/debugger/qqmldebugtranslationclient/data/MultiTextItem.qml
+       tests/auto/qml/qmlformat/data/Annotations.formatted.qml
+       tests/auto/qml/qmlformat/data/Annotations.qml
+       tests/auto/qml/qqmlparser/data/annotations/View1.qml
+       tests/auto/qml/qqmlparser/data/noannotations/View1.qml
+Copyright: 2016-2021 The Qt Company Ltd.
+License: GPL-3
+
+## GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qml/qqmlapplicationengine/testapp/main.cpp
+       tests/auto/qml/qqmlapplicationengine/tst_qqmlapplicationengine.cpp
+       tests/auto/qml/qqmlenginecleanup/data/TestType.qml
+       tests/auto/qml/qqmlenginecleanup/data/types.qml
+       tests/auto/qml/qqmlenginecleanup/tst_qqmlenginecleanup.cpp
+       tests/auto/qml/qqmlfileselector/tst_qqmlfileselector.cpp
+       tests/auto/qml/qqmlinstantiator/tst_qqmlinstantiator.cpp
+       tests/auto/qml/qqmlnotifier/tst_qqmlnotifier.cpp
+       tests/auto/qml/qtqmlmodules/tst_qtqmlmodules.cpp
+       tests/benchmarks/qml/qquickwindow/tst_qquickwindow.cpp
+       tests/manual/qmltypememory/TestType.qml
+       tests/manual/qmltypememory/main.cpp
+       tests/manual/qmltypememory/main.qml
+       tests/manual/qmltypememory/testdriver.cpp
+       tests/manual/qmltypememory/testdriver.h
+       tools/qml/conf.h
+Copyright: 2016 BlackBerry Limited (formerly Research In Motion)
+License: GPL-3 with Qt-1.0 exception
+
+Files: tools/qml/main.cpp
+Copyright: 2016 BlackBerry Limited (formerly Research In Motion)
+           2019 The Qt Company Ltd.
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qml/qqmltypeloader/SlowImport/plugin.cpp
+       tests/auto/qml/qqmltypeloader/SlowImport/plugin.h
+       tests/auto/qml/qqmltypeloader/SlowImport/slow.cpp
+       tests/auto/qml/qqmltypeloader/SlowImport/slow.h
+       tests/auto/qml/qqmltypeloader/data/GenericView.qml
+       tests/auto/qml/qqmltypeloader/data/NiceView.qml
+       tests/auto/qml/qqmltypeloader/data/test_load_complete.qml
+       tests/auto/qml/qqmltypeloader/tst_qqmltypeloader.cpp
+       tests/auto/qml/qqmlxmlhttprequest/data/send_patch.qml
+       tests/auto/quick/qquickgridview/data/negativeDisplayMargin.qml
+       tests/auto/quick/qquicklistview/data/negativeDisplayMargin.qml
+       tests/auto/quick/qquicklistview/data/proxytest.qml
+       tests/auto/quick/qquicklistview/proxytestinnermodel.cpp
+       tests/auto/quick/qquicklistview/proxytestinnermodel.h
+Copyright: 2016-2017 Canonical, Ltd.
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qml/qqmlecmascript/tst_qqmlecmascript.cpp
+       tests/auto/qmltest/selftests/tst_grabImage.qml
+Copyright: 2017 Crimson AS <info@crimson.no>
+           2016-2021 The Qt Company Ltd.
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qml/qqmlinstantiator/stringmodel.h
+Copyright: 2016 Dmitrii Kosarev aka Kakadu <kakadu.hafanana@gmail.com>
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qmltest-blacklist/animators/tst_targetdestroyed.qml
+       tests/auto/qmltest/shadersource/tst_DynamicallyCreatedSource.qml
+Copyright: 2016 Gunnar Sletta <gunnar@sletta.org>
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qmltest/events/tst_touch.qml
+Copyright: 2016 Jeremy Katz
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qmltest-blacklist/animators/tst_mixed.qml
+       tests/auto/qmltest-blacklist/animators/tst_multiwindow.qml
+       tests/auto/qmltest-blacklist/item/tst_layerInPositioner.qml
+       tests/auto/qmltest/itemgrabber/tst_itemgrabber.qml
+       tests/auto/qmltest/shadersource/tst_DynamicallyCreated.qml
+       tests/auto/qmltest/shadersource/tst_SourceInOtherWindow.qml
+       tests/auto/qmltest/shadersource/tst_SourceItem.qml
+       tests/auto/qmltest/shadersource/tst_SourcedFromOtherWindow.qml
+       tests/auto/qmltest/stability/tst_unloadrepeater.qml
+       tests/auto/quick/qquickimage/data/hugeImages.qml
+       tests/auto/quick/qquickitem2/data/grabToImage.qml
+       tests/auto/quick/scenegraph/data/render_ImageFiltering.qml
+       tests/auto/quick/scenegraph/data/render_OpacityThroughBatchRoot.qml
+       tests/auto/quick/scenegraph/data/render_bug37422.qml
+Copyright: 2016 Jolla Ltd, author: <gunnar.sletta@jollamobile.com>
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/quick/qquickanimations/data/scriptActionCrash.qml
+       tests/auto/quick/qquickgridview/data/displayMargin.qml
+       tests/auto/quick/qquicklistview/data/displayMargin.qml
+Copyright: 2016 Jolla Ltd.
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/quick/propertyrequirements/tst_propertyrequirements.cpp
+       tests/auto/quick/qquickanimations/data/animatorInvalidTargetCrash.qml
+       tests/benchmarks/qml/qqmlchangeset/tst_qqmlchangeset.cpp
+       tools/qmllint/main.cpp
+Copyright: 2016-2017 Klarälvdalens Datakonsult AB, a KDAB Group company
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qml/qmllint/tst_qmllint.cpp
+Copyright: 2016 Klarälvdalens Datakonsult AB, a KDAB Group company
+           2021 The Qt Company Ltd.
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/quick/qquickanimatedsprite/data/runningChange.qml
+Copyright: 2016 Tasuku Suzuki <stasuku@gmail.com>
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qml/qv4identifiertable/tst_qv4identifiertable.cpp
+Copyright: 2019 The Qt Company Ltd.
+           2016 basysKom GmbH.
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qml/qqmlvaluetypeproviders/data/changedSignal.qml
+Copyright: 2016 basysKom GmbH, opensource@basyskom.com.
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/qml/qv4mm/tst_qv4mm.cpp
+Copyright: 2016 basysKom GmbH.
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/particles/qquickparticlesystem/data/crashaffectors.qml
+Copyright: 2017 reMarkable A/S
+License: GPL-3 with Qt-1.0 exception
+
+Files: tests/auto/quick/softwarerenderer/tst_softwarerenderer.cpp
+Copyright: 2022 zccrs <zccrs@live.com>, JiDe Zhang <zhangjide@uniontech.com>.
+License: GPL-3 with Qt-1.0 exception
+
+## LGPL-3 or GPL-2
+
+Files: src/qml/qml/qqmlvmemetaobject.cpp
+       src/qml/qml/qqmlvmemetaobject_p.h
+       src/quick/util/qquickglobal.cpp
+Copyright: 2016 BasysKom GmbH.
+           2016 The Qt Company Ltd.
+License: LGPL-3 or GPL-2
+
+Files: src/qml/qml/qqmlabstracturlinterceptor.cpp
+       src/qml/qml/qqmlabstracturlinterceptor.h
+       src/qml/qml/qqmlapplicationengine.cpp
+       src/qml/qml/qqmlapplicationengine.h
+       src/qml/qml/qqmlapplicationengine_p.h
+       src/qml/qml/qqmlfileselector.cpp
+       src/qml/qml/qqmlfileselector.h
+       src/qml/qml/qqmlfileselector_p.h
+       src/qmlmodels/qqmlinstantiator.cpp
+       src/qmlmodels/qqmlinstantiator_p.h
+       src/qmlmodels/qqmlinstantiator_p_p.h
+       src/qmlmodels/qqmlmodelsmodule_p.h
+       src/quick/items/qquickflickablebehavior_p.h
+Copyright: 2016 BlackBerry Limited (formerly Research In Motion)
+License: LGPL-3 or GPL-2
+
+Files: src/qml/jsruntime/qv4estable.cpp
+       src/qml/jsruntime/qv4estable_p.h
+       src/qml/jsruntime/qv4mapiterator.cpp
+       src/qml/jsruntime/qv4mapiterator_p.h
+       src/qml/jsruntime/qv4mapobject.cpp
+       src/qml/jsruntime/qv4mapobject_p.h
+       src/qml/jsruntime/qv4setiterator.cpp
+       src/qml/jsruntime/qv4setiterator_p.h
+       src/qml/jsruntime/qv4setobject.cpp
+       src/qml/jsruntime/qv4setobject_p.h
+Copyright: 2018 Crimson AS <info@crimson.no>
+License: LGPL-3 or GPL-2
+
+Files: src/qml/jsruntime/qv4arrayiterator.cpp
+       src/qml/jsruntime/qv4arrayiterator_p.h
+       src/qml/jsruntime/qv4arrayobject.cpp
+       src/qml/jsruntime/qv4objectproto.cpp
+       src/qml/jsruntime/qv4stringiterator.cpp
+       src/qml/qml/qqmlimport.cpp
+       src/qmltest/quicktestresult.cpp
+Copyright: 2017-2018 Crimson AS <info@crimson.no>
+           2016-2018 The Qt Company Ltd.
+License: LGPL-3 or GPL-2
+
+Files: tests/auto/quick/qquickmousearea/data/mask.qml
+Copyright: 2017 Ford Motor Company
+License: LGPL-3 or GPL-2
+
+Files: src/quick/util/qquickanimatorcontroller.cpp
+       src/quick/util/qquickanimatorcontroller_p.h
+       src/quick/util/qquickanimatorjob.cpp
+       src/quick/util/qquickanimatorjob_p.h
+Copyright: 2016 Gunnar Sletta <gunnar@sletta.org>
+           2016 The Qt Company Ltd.
+License: LGPL-3 or GPL-2
+
+Files: src/qml/compiler/qv4compiler.cpp
+Copyright: 2018 Intel Corporation
+           2016 The Qt Company Ltd.
+License: LGPL-3 or GPL-2
+
+Files: src/quick/items/qquickitemgrabresult.cpp
+       src/quick/items/qquickitemgrabresult.h
+Copyright: 2016 Jolla Ltd, author: <gunnar.sletta@jollamobile.com>
+License: LGPL-3 or GPL-2
+
+Files: src/quick/scenegraph/coreapi/qsgbatchrenderer.cpp
+       src/quick/scenegraph/coreapi/qsgbatchrenderer_p.h
+       src/quick/scenegraph/coreapi/qsgrhivisualizer.cpp
+       src/quick/scenegraph/coreapi/qsgrhivisualizer_p.h
+Copyright: 2016 Jolla Ltd, author: <gunnar.sletta@jollamobile.com>
+           2016 Robin Burchell <robin.burchell@viroteck.net>
+           2016-2019 The Qt Company Ltd.
+License: LGPL-3 or GPL-2
+
+Files: src/quick/scenegraph/qsgthreadedrenderloop.cpp
+Copyright: 2016 Jolla Ltd, author: <gunnar.sletta@jollamobile.com>
+           2016 The Qt Company Ltd.
+License: LGPL-3 or GPL-2
+
+Files: src/qml/animations/qcontinuinganimationgroupjob.cpp
+       src/qml/animations/qcontinuinganimationgroupjob_p.h
+Copyright: 2016 Jolla Ltd.
+License: LGPL-3 or GPL-2
+
+Files: src/quick/scenegraph/coreapi/qsgnode_p.h
+Copyright: 2016 Klarälvdalens Datakonsult AB, a KDAB Group company
+License: LGPL-3 or GPL-2
+
+Files: tests/auto/qml/qqmlconsole/data/categorized_logging.qml
+Copyright: 2016 Pelagicore AG
+License: LGPL-3 or GPL-2
+
+## END AUTO GENERATED BLOCK
+
+## 3rd psrty stuff
+Files: src/3rdparty/masm/*
+Copyright: 2003-2018 Apple Inc.
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/disassembler/udis86/*
+Copyright: 2002-2009 Vivek Thampi
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/disassembler/udis86/udis86_itab_holder.c
+Copyright: 2012 Apple Inc.
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/disassembler/mips32/Mips32Opcode.h
+       src/3rdparty/masm/disassembler/mips32/Mips32Opcode.cpp
+       src/3rdparty/masm/disassembler/Mips32Disassembler.cpp
+Copyright: 2015 Cisco Systems, Inc.
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/assembler/AssemblerBufferWithConstantPool.h
+Copyright: 2009 University of Szeged
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/assembler/ARMv7Assembler.h
+       src/3rdparty/masm/assembler/MacroAssemblerARMv7.h
+Copyright: 2009-2013 Apple Inc.
+           2010 University of Szeged
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/assembler/MacroAssemblerMIPS.h
+Copyright: 2008-2009 Apple Inc.
+           2010 MIPS Technologies, Inc.
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/assembler/MIPSAssembler.h
+Copyright: 2009 Apple Inc.
+           2009 University of Szeged
+           2010 MIPS Technologies, Inc.
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/wtf/ASCIICType.h
+       src/3rdparty/masm/wtf/SegmentedVector.h
+       src/3rdparty/masm/wtf/Locker.h
+Copyright: 2007-2011 Apple Inc.
+License: BSD-3-clause
+
+Files: src/3rdparty/masm/wtf/OSAllocatorIntegrity.cpp
+Copyright: 2016 Rolland Dudemaine
+           2016 The Qt Company Ltd.
+License: LGPL-3 or GPL-2+
+
+Files: src/3rdparty/masm/wtf/CryptographicallyRandomNumber.h
+Copyright: 2008 Torch Mobile Inc. (http://www.torchmobile.com/)
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/wtf/FeatureDefines.h
+Copyright: 2006-2013 Apple Inc.
+           2007-2009 Torch Mobile, Inc.
+           2010-2011 Research In Motion Limited.
+           2013 Samsung Electronics.
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/wtf/Platform.h
+Copyright: 2006-2013 Apple Inc.
+           2007-2009 Torch Mobile, Inc.
+           2010-2011 Research In Motion Limited.
+           2018 The Qt Company Ltd.
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/wtf/Atomics.h
+Copyright: 2007-2012 Apple Inc.
+           2007 Justin Haygood <jhaygood@reaktix.com>
+License: BSD-3-clause
+
+Files: src/3rdparty/masm/wtf/DynamicAnnotations.h
+Copyright: 2011 Google Inc.
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/stubs/*
+       src/3rdparty/masm/config.h
+       src/3rdparty/masm/WeakRandom.h
+Copyright: 2016-2018 The Qt Company Ltd.
+License: LGPL-3 or GPL-2
+
+Files: src/3rdparty/masm/stubs/runtime/RegExpKey.h
+Copyright: 2010 University of Szeged
+           2010 Renata Hodovan <hodovan@inf.u-szeged.hu>
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/yarr/Yarr.h
+       src/3rdparty/masm/yarr/YarrCanonicalizeUnicode.cpp
+       src/3rdparty/masm/yarr/YarrInterpreter.cpp
+       src/3rdparty/masm/yarr/YarrPattern.cpp
+       src/3rdparty/masm/yarr/YarrPattern.h
+       src/3rdparty/masm/yarr/generateYarrCanonicalizeUnicode
+Copyright: 2009-2017 Apple Inc.
+           2010 Peter Varga <pvarga@inf.u-szeged.hu>, University of Szeged
+License: BSD-2-clause
+
+Files: src/3rdparty/masm/yarr/YarrErrorCode.cpp
+       src/3rdparty/masm/yarr/YarrErrorCode.h
+Copyright: 2017 Yusuke Suzuki <utatane.tea@gmail.com>
+License: BSD-2-clause
+
+## License texts
+
+License: LGPL-3
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Lesser General Public License version 3
+ as published by the Free Software Foundation.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU Lesser General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public
+ License version 3 can be found in /usr/share/common-licenses/LGPL-3.
+
+License: GPL-2
+ This file may be used under the terms of the GNU General Public License
+ version 2.0 as published by the Free Software Foundation.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 2 can be found in /usr/share/common-licenses/GPL-2.
+
+License: GFDL-NIV-1.3
+ Permission is granted to copy, distribute and/or modify this document
+ under the terms of the GNU Free Documentation License, Version 1.3
+ or any later version published by the Free Software Foundation;
+ with no Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+ .
+ On Debian systems, the complete text of the GNU Free Documentation
+ License version 1.3 can be found in /usr/share/common-licenses/GFDL-1.3.
+
+License: GPL-3 with Qt-1.0 exception
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License version 3 as
+ published by the Free Software Foundation.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 can be found in /usr/share/common-licenses/GPL-3.
+ .
+ The Qt Company GPL Exception 1.0
+ Exception 1:
+ .
+ As a special exception you may create a larger work which contains the
+ output of this application and distribute that work under terms of your
+ choice, so long as the work is not otherwise derived from or based on
+ this application and so long as the work does not in itself generate
+ output that contains the output from this application in its original
+ or modified form.
+ .
+ Exception 2:
+ .
+ As a special exception, you have permission to combine this application
+ with Plugins licensed under the terms of your choice, to produce an
+ executable, and to copy and distribute the resulting executable under
+ the terms of your choice. However, the executable must be accompanied
+ by a prominent notice offering all users of the executable the entire
+ source code to this application, excluding the source code of the
+ independent modules, but including any changes you have made to this
+ application, under the terms of this license.
+
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are
+ met:
+ .
+   * Redistributions of source code must retain the above copyright
+     notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above copyright
+     notice, this list of conditions and the following disclaimer in
+     the documentation and/or other materials provided with the
+     distribution.
+   * Neither the name of The Qt Company Ltd nor the names of its
+     contributors may be used to endorse or promote products derived
+     from this software without specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: BSD-3-clause-Ecma
+ The <<Software identified by reference to the Ecma Standard* ("Software)">>
+ is protected by copyright and is being made available under the "BSD License",
+ included below. This Software may be subject to third party rights (rights
+ from parties other than Ecma International), including patent rights, and no
+ licenses under such third party rights are granted under this license even if
+ the third party concerned is a member of Ecma International.
+ .
+ SEE THE ECMA CODE OF CONDUCT IN PATENT MATTERS AVAILABLE AT
+ http://www.ecma-international.org/memento/codeofconduct.htm FOR INFORMATION
+ REGARDING THE LICENSING OF PATENT CLAIMS THAT ARE REQUIRED TO IMPLEMENT ECMA
+ INTERNATIONAL STANDARDS*.
+ .
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ .
+  1. Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+  3. Neither the name of the authors nor Ecma International may be used to
+     endorse or promote products derived from this software without specific
+     prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE ECMA INTERNATIONAL "AS IS" AND ANY EXPRESS OR
+ IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ EVENT SHALL ECMA INTERNATIONAL BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.
+ .
+ * Ecma International Standards hereafter means Ecma International Standards as
+ well as Ecma Technical Reports
+
+License: MPL-1.1
+ The contents of this file are subject to the Mozilla Public License Version
+ 1.1 (the "License"); you may not use this file except in compliance with
+ the License.
+ .
+ Software distributed under the License is distributed on an "AS IS" basis,
+ WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
+ for the specific language governing rights and limitations under the
+ License.
+ .
+ On Debian systems, the complete text of the Mozilla Public License Version
+ 1.1 can be found in /usr/share/common-licenses/MPL-1.1.
+
+License: GPL-2+
+ This program is free software; you can redistribute it
+ and/or modify it under the terms of the GNU General Public
+ License as published by the Free Software Foundation; either
+ version 2 of the License, or (at your option) any later
+ version.
+ .
+ This program is distributed in the hope that it will be
+ useful, but WITHOUT ANY WARRANTY; without even the implied
+ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ PURPOSE.  See the GNU General Public License for more
+ details.
+ .
+ You should have received a copy of the GNU General Public
+ License along with this package; if not, write to the Free
+ Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ Boston, MA  02110-1301 USA
+ .
+ On Debian systems, the full text of the GNU General Public
+ License version 2 can be found in the file
+ `/usr/share/common-licenses/GPL-2'.
+
+License: LGPL-2.1
+ GNU Lesser General Public License version 2.1:
+ This file may be used under the terms of the GNU Lesser General Public
+ License version 2.1 as published by the Free Software Foundation and
+ appearing in the file LICENSE.LGPL included in the packaging of this
+ file. Please review the following information to ensure the GNU Lesser
+ General Public License version 2.1 requirements will be met:
+ http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public License
+ can be found in `/usr/share/common-licenses/LGPL-2.1`.
+
+License: Expat
+ Permission is hereby granted, free of charge, to any person
+ obtaining a copy of this software and associated documentation
+ files (the "Software"), to deal in the Software without
+ restriction, including without limitation the rights to use,
+ copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the
+ Software is furnished to do so, subject to the following
+ conditions:
+ .
+ The above copyright notice and this permission notice shall be
+ included in all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ OTHER DEALINGS IN THE SOFTWARE.
+
+License: Apache-2.0
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ .
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ .
+ On Debian systems, the full text of Apache License, Version 2.0 can
+ be found in /usr/share/common-licenses/Apache-2.0.
+
+License: GPL-3
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License version 3 as
+ published by the Free Software Foundation.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 can be found in /usr/share/common-licenses/GPL-3.
+
+License: BSD-2-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

@@ -117,3 +117,11 @@ live networking must be checked on InkPad.
 The core tests and optional firmware-export comparison are documented in the
 [app README](apps/readest-sync/README.md). Readest uses dynamically linked OpenSSL 3 for book hashes and the firmware
 libcurl for HTTPS; no crypto or Qt runtime is installed on the reader.
+
+## License
+
+Original code and documentation in this repository are licensed under the
+[MIT License](LICENSE), including `hello`, `readest-sync`, and shared build and
+simulator tooling. Third-party code retains its own copyrights and licenses;
+see [dependency notices](licenses/README.md). The root license does not relicense
+SDKs, firmware libraries, or other external components.
