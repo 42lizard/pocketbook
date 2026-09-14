@@ -9,7 +9,7 @@ APP = Path(__file__).resolve().parents[1]
 BUILD = APP.parents[1] / 'build/readest-sync'
 CA_HASH = 'f66dff1bdf8f96060b8177976f8b7d9254bc89bc4db933d769f7384d28480bc9'
 
-def main():
+def create_package():
     binary = BUILD / 'readest-sync.app'
     ca = APP / 'assets/ca-certificates.crt'
     if not binary.is_file():
@@ -29,6 +29,10 @@ def main():
         target.chmod(0o755 if relative.endswith('.app') else 0o644)
         manifest[relative] = hashlib.sha256(target.read_bytes()).hexdigest()
     (package / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    return package
+
+def main():
+    package = create_package()
     print(package)
     print('Workspace package only. Runtime and live-account validation are still required.')
 

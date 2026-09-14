@@ -1,0 +1,107 @@
+name: Readest Sync
+
+on:
+  pull_request:
+    paths:
+      - 'apps/readest-sync/**'
+      - 'mk/**'
+      - 'tools/check_qt6*.py'
+      - 'tools/pocketbook-simulator/**'
+      - 'Dockerfile.qt6'
+      - '.dockerignore'
+      - 'compose.yaml'
+      - 'Makefile'
+      - 'LICENSE'
+      - 'licenses/**'
+      - '.github/workflows/readest-sync.yml'
+  push:
+    branches: [main]
+    tags: ['readest-sync/v*']
+    paths:
+      - 'apps/readest-sync/**'
+      - 'mk/**'
+      - 'tools/check_qt6*.py'
+      - 'tools/pocketbook-simulator/**'
+      - 'Dockerfile.qt6'
+      - '.dockerignore'
+      - 'compose.yaml'
+      - 'Makefile'
+      - 'LICENSE'
+      - 'licenses/**'
+      - '.github/workflows/readest-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: readest-sync-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build SDK image
+        run: docker compose build qt6
+      - name: Test core, HTTPS, installer and release packaging
+        run: |
+          docker compose run --rm -e HOST_CC=/usr/bin/cc -e HOST_CXX=/usr/bin/c++ qt6 sh -ec '
+            python3 apps/readest-sync/tests/test_probe.py
+            python3 apps/readest-sync/tests/test_cloud.py
+            python3 apps/readest-sync/tests/test_integrity.py
+            python3 apps/readest-sync/tests/test_http.py
+            python3 apps/readest-sync/tests/test_install.py
+            python3 apps/readest-sync/tests/test_release.py
+          '
+      - name: Test Qt UI and operation lifecycle
+        run: docker compose run --rm qt6 sh apps/readest-sync/tests/test_qt.sh
+      - name: Build PocketBook binary and check ARM ABI
+        run: docker compose run --rm qt6 make APP=readest-sync check
+      - name: Package installable ZIP
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          revision=$(git rev-parse HEAD)
+          version="dev-${revision:0:12}"
+          if [[ "$REF_TYPE" == tag && "$REF_NAME" == readest-sync/v* ]]; then
+            version="${REF_NAME#readest-sync/}"
+          fi
+          docker compose run --rm -e VERSION="$version" -e REVISION="$revision" qt6 sh -ec '
+            python3 apps/readest-sync/tools/package_release.py --version "$VERSION" --commit "$REVISION" --output build/release
+            cp apps/readest-sync/release/README.md build/release/README.md
+          '
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: readest-sync-pocketbook
+          path: build/release/
+          if-no-files-found: error
+          retention-days: 14
+
+  draft-release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/readest-sync/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: readest-sync-pocketbook
+          path: release
+      - name: Create draft release for device validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/*.zip release/*.sha256 \
+            --verify-tag --draft --latest=false \
+            --title "Readest Sync ${RELEASE_TAG#readest-sync/}" \
+            --notes-file release/README.md

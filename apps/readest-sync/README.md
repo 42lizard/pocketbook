@@ -60,6 +60,38 @@ validation rules. Hardware acceptance of the refactored build is still required.
 
 ## Build and package
 
+### GitHub Actions releases
+
+The `Readest Sync` workflow builds and tests pull requests and `main` changes
+affecting this app or its shared dependencies. Each successful run provides a
+`readest-sync-pocketbook` artifact containing an installable ZIP and SHA-256
+checksum. **Run workflow** also builds a development artifact without publishing.
+
+To prepare an independent app release, tag the intended committed revision:
+
+```sh
+git tag -a readest-sync/v0.1.0 -m "Readest Sync v0.1.0"
+git push origin readest-sync/v0.1.0
+```
+
+Tags must use `readest-sync/vMAJOR.MINOR.PATCH`, optionally followed by a
+prerelease suffix such as `-rc.1`. Tag pushes run regardless of path filters.
+After tests and the ARM build pass, the workflow creates a **draft** GitHub
+Release. Download the ZIP from the draft and validate it on the device before
+publishing it. Tags for other monorepo apps do not create Readest Sync releases.
+An existing release is not overwritten on reruns; use a new version for changed
+code. No account secrets or device access are required for CI; the draft job uses
+GitHub's built-in token with `contents: write`.
+
+The ZIP includes installation instructions, version/commit identity, licenses,
+and only two files intended for the device. Follow the included instructions to
+copy those files individually, preserving existing device directories and data.
+Compatibility is currently validated on InkPad 4 (PB743G), firmware 6.11.1683;
+other devices and firmware need separate testing. Automated checks alone do not
+establish device compatibility.
+
+### Local packaging
+
 Run from the repository root:
 
 ```sh
@@ -67,7 +99,19 @@ docker compose run --rm qt6 make APP=readest-sync check
 python3 apps/readest-sync/tools/package_app.py
 ```
 
-The second command creates a new directory under `build/readest-sync` with:
+To create the same ZIP used by CI after a successful build:
+
+```sh
+python3 apps/readest-sync/tools/package_release.py \
+  --version v0.1.0 --commit "$(git rev-parse HEAD)"
+```
+
+The ZIP and its checksum are written under `build/readest-sync/release`.
+Use a clean checkout when identifying a release with its commit SHA. Existing
+ZIPs are not overwritten; choose a different output directory with `--output`
+when repeating a local build of the same version.
+
+`package_app.py` creates a new directory under `build/readest-sync` with:
 
 - `applications/readest-sync.app`
 - `system/readest-sync/ca-certificates.crt`

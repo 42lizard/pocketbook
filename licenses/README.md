@@ -12,6 +12,7 @@ outside the tracked project are not included in this licensing declaration.
 | miniz 3.1.2 | Vendored EPUB ZIP reader, compiled into readest-sync | [Original MIT notice](../apps/readest-sync/src/vendor/miniz/LICENSE); additional notices remain in the source files |
 | json-c | Statically linked into the device readest-sync executable | [MIT and package notices](libjson-c-dev-copyright.txt) |
 | SQLite | Statically linked into the device readest-sync executable | [Public-domain dedication and package notices](libsqlite3-dev-copyright.txt) |
+| Mozilla CA bundle, converted by curl | Shipped as `system/readest-sync/ca-certificates.crt` | [MPL 2.0](MPL-2.0.txt); provenance and source in [the asset README](../apps/readest-sync/assets/README.md) |
 
 The SQLite package notice also covers packaging under separate terms. Those
 packaging terms do not change the public-domain status of SQLite itself.
@@ -45,6 +46,9 @@ declare our original code to be GPL-licensed.
 The SDK helper MIT notice was copied from its local upstream checkout. The build
 pins that project at `754e436c7c24b4e2695154e2efffbf7447b4130e`; its license does
 not cover all components downloaded by the SDK.
+
+`MPL-2.0.txt` is the unmodified license text from Mozilla, retrieved on 2026-09-14
+from <https://www.mozilla.org/media/MPL/2.0/index.f75d2927d3c1.txt>.
 
 These notices describe the direct dependencies above. They are not an inventory
 of every package in the Docker images or the PocketBook firmware. Firmware and

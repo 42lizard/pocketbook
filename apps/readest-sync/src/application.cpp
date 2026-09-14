@@ -1,4 +1,5 @@
 #include "application.h"
+#include <stdexcept>
 #include <ctime>
 #include <unistd.h>
 #include <fcntl.h>
