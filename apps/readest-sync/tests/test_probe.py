@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Host tests: C++ compiler, SQLite headers/library, and json-c required."""
+from contextlib import closing
 from pathlib import Path
 import hashlib
 import importlib.util
@@ -42,7 +43,8 @@ class ProbeTests(unittest.TestCase):
         self.root = Path(self.folder.name)
         self.explorer = self.root / 'explorer.db'
         self.books = self.root / 'books.db'
-        with sqlite3.connect(self.explorer) as db:
+        # The inner context commits/rolls back; closing() releases the connection.
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.executescript('''
                 CREATE TABLE folders(id INTEGER, storageid INTEGER, name TEXT);
                 CREATE TABLE files(book_id INTEGER, folder_id INTEGER, storageid INTEGER, filename TEXT, fast_hash BLOB);
@@ -52,7 +54,7 @@ class ProbeTests(unittest.TestCase):
             ''')
             db.execute('INSERT INTO files VALUES(1,1,1,?,?)', (Path(BOOK).name, bytes.fromhex(HASH)))
             db.execute('INSERT INTO books_settings VALUES(1,1,?,100,10,100,0)', ('#' + CFI,))
-        with sqlite3.connect(self.books) as db:
+        with closing(sqlite3.connect(self.books)) as db, db:
             db.executescript('''
                 CREATE TABLE Items(OID INTEGER, HashUUID TEXT);
                 CREATE TABLE Tags(ItemID INTEGER, TagID INTEGER, Val TEXT, TimeEdt INTEGER);
@@ -69,7 +71,7 @@ class ProbeTests(unittest.TestCase):
     def test_native_sync_page_counts(self):
         for current, total, expected in [(19, 207, '[19,207]'), (0, 207, '[0,207]'),
                                          (208, 207, ''), (19, 0, ''), (None, 207, ''), (1.5, 207, '')]:
-            with sqlite3.connect(self.explorer) as db:
+            with closing(sqlite3.connect(self.explorer)) as db, db:
                 db.execute('UPDATE books_settings SET cpage=?, npage=?', (current, total))
             result = subprocess.check_output([str(self.binary), 'native-progress', str(self.explorer), BOOK], text=True)
             self.assertEqual(result.strip(), expected)
@@ -82,7 +84,7 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(before, [hashlib.sha256(p.read_bytes()).hexdigest() for p in [self.explorer, self.books]])
 
     def test_conflicting_databases_do_not_guess(self):
-        with sqlite3.connect(self.books) as db:
+        with closing(sqlite3.connect(self.books)) as db, db:
             db.execute("UPDATE Tags SET Val='pbr:/webkit?##epubcfi(/6/2!/4/2/1:0)'")
         self.assertEqual(self.inspect()['cfi'], '')
 
@@ -91,24 +93,24 @@ class ProbeTests(unittest.TestCase):
                                str(self.root / 'trial')], capture_output=True, text=True)
 
     def prepare_trial(self):
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('UPDATE files SET fast_hash=?', (bytes.fromhex('C7D0E520B24461A476557A4C5381DC2E'),))
             db.execute('ALTER TABLE books_settings ADD COLUMN favorite INTEGER DEFAULT 1')
             db.execute('INSERT INTO books_settings SELECT 2,profileid,position,position_ts,cpage,npage,completed,0 FROM books_settings')
 
     def test_trial_preserves_other_fields_rows_and_backup(self):
         self.prepare_trial()
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             before = db.execute('SELECT * FROM books_settings ORDER BY bookid').fetchall()
         result = self.run_trial()
         self.assertEqual(result.returncode, 0, result.stderr)
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             after = db.execute('SELECT * FROM books_settings ORDER BY bookid').fetchall()
         self.assertEqual(after[0][2], 'pbr:/webkit?##epubcfi(/6/4[bravo]!/4/2)')
         self.assertEqual(after[0][:2], before[0][:2])
         self.assertEqual(after[0][4:], before[0][4:])
         self.assertEqual(after[1], before[1])
-        with sqlite3.connect(self.root / 'trial/before.db') as db:
+        with closing(sqlite3.connect(self.root / 'trial/before.db')) as db, db:
             self.assertEqual(db.execute('SELECT * FROM books_settings ORDER BY bookid').fetchall(), before)
         self.assertTrue((self.root / 'trial/committed.txt').exists())
         self.assertEqual((self.root / 'trial/readest-source-cfi.txt').read_text().strip(),
@@ -121,7 +123,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_trial_rejects_unrecognized_trigger(self):
         self.prepare_trial()
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('CREATE TRIGGER unexpected AFTER UPDATE ON books_settings BEGIN UPDATE books_settings SET favorite=0; END')
         before = self.explorer.read_bytes()
         result = self.run_trial()
@@ -131,7 +133,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_trial_rejects_multiple_profiles(self):
         self.prepare_trial()
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('INSERT INTO books_settings SELECT bookid,2,position,position_ts,cpage,npage,completed,favorite FROM books_settings WHERE bookid=1')
         result = self.run_trial()
         self.assertNotEqual(result.returncode, 0)
@@ -144,7 +146,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_trial_busy_database_preserves_position(self):
         self.prepare_trial()
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('BEGIN IMMEDIATE')
             result = self.run_trial()
             self.assertNotEqual(result.returncode, 0)
@@ -152,7 +154,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_trial_wal_backup_and_native_completion_trigger(self):
         self.prepare_trial()
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('PRAGMA journal_mode=WAL')
             db.execute('ALTER TABLE books_settings ADD COLUMN completed_ts INTEGER DEFAULT 123')
             db.execute("CREATE TRIGGER completed_ts_update AFTER UPDATE ON books_settings WHEN NEW.completed <> OLD.completed BEGIN     UPDATE books_settings SET completed_ts = strftime('%s', 'now') WHERE bookid = NEW.bookid  AND profileid = NEW.profileid; END")
@@ -160,11 +162,11 @@ class ProbeTests(unittest.TestCase):
             result = self.run_trial()
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(db.execute('SELECT completed_ts FROM books_settings WHERE bookid=1').fetchone()[0], 123)
-        with sqlite3.connect(self.root / 'trial/before.db') as db:
+        with closing(sqlite3.connect(self.root / 'trial/before.db')) as db, db:
             self.assertEqual(db.execute('SELECT position FROM books_settings WHERE bookid=1').fetchone()[0], '#' + CFI)
 
     def test_multiple_profiles_do_not_guess(self):
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('INSERT INTO books_settings SELECT bookid,2,position,position_ts,cpage,npage,completed FROM books_settings')
         self.assertEqual(self.inspect()['cfi'], '')
 
@@ -180,7 +182,7 @@ class ProbeTests(unittest.TestCase):
         self.assertFalse(self.explorer.exists())
 
     def test_unsupported_schema_is_reported(self):
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('DROP TABLE files')
         self.assertIn('error', self.inspect()['explorer'])
 
@@ -205,7 +207,7 @@ class ProbeTests(unittest.TestCase):
 
     def test_managed_native_position_preserves_row(self):
         path = '/mnt/ext1/Books/Readest/81fbcb860e2eed5d223c359063680f87-ABC123/Book-81fbcb86.epub'
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('UPDATE folders SET name=?', (str(Path(path).parent),))
             db.execute('UPDATE files SET filename=?', (Path(path).name,))
             before = db.execute('SELECT * FROM books_settings').fetchone()
@@ -213,12 +215,12 @@ class ProbeTests(unittest.TestCase):
         result = subprocess.run([str(self.binary), 'native', str(self.explorer), str(trial),
                                  path, 'normal', 'epubcfi(/6/4[bravo]!/4,/2,/12/1:179)'], capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             after = db.execute('SELECT * FROM books_settings').fetchone()
         self.assertEqual(after[:2], before[:2])
         self.assertEqual(after[2], 'pbr:/webkit?##epubcfi(/6/4[bravo]!/4/2)')
         self.assertEqual(after[4:], before[4:])
-        with sqlite3.connect(trial / 'before.db') as db:
+        with closing(sqlite3.connect(trial / 'before.db')) as db, db:
             self.assertEqual(db.execute('SELECT * FROM books_settings').fetchone(), before)
 
     def test_percentages_are_read_only_and_independent_of_position_format(self):
@@ -230,21 +232,21 @@ class ProbeTests(unittest.TestCase):
             return value
         self.assertEqual(percentage(), 10)
         self.assertEqual(percentage('/mnt/ext1/Books/missing.epub'), -1)
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute("UPDATE books_settings SET position='unsupported',cpage=25")
         self.assertEqual(percentage(), 25)
         for current,total,expected in [(0,100,0), (100,100,100), (150,100,100),
                                       (-1,100,-1), (5,0,-1), (None,100,-1), ('bad',100,-1)]:
-            with sqlite3.connect(self.explorer) as db:
+            with closing(sqlite3.connect(self.explorer)) as db, db:
                 db.execute('UPDATE books_settings SET cpage=?,npage=?', (current,total))
             self.assertEqual(percentage(), expected)
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('UPDATE books_settings SET cpage=20,npage=100')
             db.execute('INSERT INTO books_settings SELECT bookid,2,position,position_ts,cpage,npage,completed FROM books_settings')
         self.assertEqual(percentage(), -1)
 
     def test_native_transactional_snapshot_includes_wal(self):
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('PRAGMA journal_mode=WAL')
             db.execute('UPDATE books_settings SET position_ts=765')
             db.commit()
@@ -255,7 +257,7 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(self.explorer.read_bytes(), before)
             self.assertEqual(Path(str(self.explorer) + '-wal').read_bytes(), wal)
-            with sqlite3.connect(destination) as snapshot:
+            with closing(sqlite3.connect(destination)) as snapshot, snapshot:
                 self.assertEqual(snapshot.execute('SELECT position_ts FROM books_settings').fetchone()[0], 765)
                 self.assertEqual(snapshot.execute('PRAGMA journal_mode').fetchone()[0], 'delete')
             repeated = subprocess.run([str(self.binary), 'backup', str(self.explorer), str(destination)], capture_output=True)
@@ -271,7 +273,7 @@ class ProbeTests(unittest.TestCase):
         self.assertFalse((self.root / 'firmware').exists())
 
     def test_managed_native_missing_profile_requires_first_open(self):
-        with sqlite3.connect(self.explorer) as db:
+        with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('DELETE FROM books_settings')
         original = self.explorer.read_bytes()
         result = subprocess.run([str(self.binary), 'native', str(self.explorer), str(self.root / 'empty'),
