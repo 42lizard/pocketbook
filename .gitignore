@@ -3,6 +3,17 @@
 __pycache__/
 *.[mM][dD]
 ![rR][eE][aA][dD][mM][eE].[mM][dD]
+# Agent configuration and domain docs for the maintained apps.
+!/AGENTS.md
+!/docs/agents/issue-tracker.md
+!/docs/agents/triage-labels.md
+!/docs/agents/domain.md
+!/CONTEXT-MAP.md
+!/docs/adr/*.md
+!/apps/hello/CONTEXT.md
+!/apps/hello/docs/adr/*.md
+!/apps/readest-sync/CONTEXT.md
+!/apps/readest-sync/docs/adr/*.md
 /nvim.log
 /scr0001.jpeg
 /scr0002.jpeg
