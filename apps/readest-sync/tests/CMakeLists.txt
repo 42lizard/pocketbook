@@ -1,6 +1,6 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-# Every driver links the production archive. Only the application driver replaces
-# the validator object with the counted real implementation; no duplicate archive.
+# Every driver links the production archive. Application and resume drivers use
+# the counted real validator implementation; no duplicate production archive.
 function(readest_native_test name script)
   add_executable(${name}-test ${ARGN})
   target_link_libraries(${name}-test PRIVATE readest-core)
@@ -22,3 +22,4 @@ foreach(name install release)
   add_test(NAME ${name} COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_${name}.py")
   set_tests_properties(${name} PROPERTIES LABELS packaging)
 endforeach()
+readest_native_test(resume test_epub_command.py resume_test.cpp counted_integrity.cpp)

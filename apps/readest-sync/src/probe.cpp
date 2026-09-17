@@ -356,9 +356,9 @@ void backup_native_database(const std::string& path, const std::string& destinat
     if(json_object_array_length(check.get())!=1 || field(json_object_array_get_idx(check.get(),0),"quick_check")!="ok")
         throw std::runtime_error("Native snapshot failed integrity check");
 }
-static void apply_position(const std::string& database, const std::string& directory,
+static NativeApplyResult apply_position(const std::string& database, const std::string& directory,
                            const std::string& book_path, const std::string& expected_hash,
-                           const std::string& readest_range, const NativePosition* expected) {
+                           const std::string& readest_range, const NativePosition* expected,const std::atomic<bool>* cancel=nullptr) {
     // No CREATE on the source, no guessed book id/profile, no whole-row REPLACE.
     struct stat st;
     if (lstat(database.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
@@ -413,6 +413,7 @@ static void apply_position(const std::string& database, const std::string& direc
     write_text(directory + "/target.txt", target + "\n" + timestamp + "\n");
     write_text(directory + "/readest-source-cfi.txt", readest_range + "\n");
     query(source, "BEGIN IMMEDIATE");
+    bool committing=false;
     try {
         auto current_ids = query(source, native_identify, params);
         auto current = query(source, "SELECT * FROM books_settings WHERE bookid=?", {id});
@@ -427,6 +428,7 @@ static void apply_position(const std::string& database, const std::string& direc
                 throw std::runtime_error("Unrecognized database trigger; no position written");
         }
         int changes = sqlite3_total_changes(source.db);
+        if(cancel && cancel->load()) throw std::runtime_error("Cancelled before native position update.");
         query(source, "UPDATE books_settings SET position=?,position_ts=? WHERE bookid=? AND profileid=? AND CAST(COALESCE(position,'') AS TEXT)=? AND CAST(COALESCE(position_ts,'') AS TEXT)=?",
               {target, timestamp, id, profile, field(row, "position"), field(row, "position_ts")});
         if (sqlite3_changes(source.db) != 1 || sqlite3_total_changes(source.db) != changes + 1)
@@ -436,29 +438,36 @@ static void apply_position(const std::string& database, const std::string& direc
         auto after = query(source, "SELECT * FROM books_settings WHERE bookid=?", {id});
         if (!same_rows(before.get(), after.get()))
             throw std::runtime_error("Unexpected settings changes; rolling back");
+        committing=true;
         query(source, "COMMIT");
-    } catch (...) {
-        sqlite3_exec(source.db, "ROLLBACK", nullptr, nullptr, nullptr);
+    } catch (const std::exception& error) {
+        const bool ended=sqlite3_get_autocommit(source.db)!=0;
+        const int rollback=sqlite3_exec(source.db, "ROLLBACK", nullptr, nullptr, nullptr);
+        if((committing && ended) || (!ended && rollback!=SQLITE_OK))
+            return {NativeApplyStatus::Uncertain,"Cannot confirm native position commit or rollback. Backup: "+directory+". "+error.what()};
         throw;
     }
-    // If this final audit write fails, report the committed state explicitly.
     try { write_text(directory + "/committed.txt", "Position committed; verify visible passage.\n"); }
-    catch (...) { throw std::runtime_error("Position COMMITTED, but final log failed. Backup exists. Check visible passage."); }
+    catch (const std::exception&) {
+        return {NativeApplyStatus::Committed,"PocketBook position changed, but the final audit log could not be saved. Backup: "+directory};
+    }
+    return {};
 }
 void apply_readest_trial(const std::string& database, const std::string& directory) {
-    apply_position(database,directory,"/mnt/ext1/Books/Readest/readest-sync-probe.epub",
+    const auto result=apply_position(database,directory,"/mnt/ext1/Books/Readest/readest-sync-probe.epub",
                    "C7D0E520B24461A476557A4C5381DC2E",
                    "epubcfi(/6/4[bravo]!/4,/2,/12[BRAVO-05]/1:179)",nullptr);
+    if(!result.warning.empty()) throw std::runtime_error(result.warning);
 }
-void apply_native_position(const std::string& database, const std::string& directory,
+NativeApplyResult apply_native_position(const std::string& database, const std::string& directory,
                            const NativePosition& expected, const std::string& cfi,
-                           const std::string& model, const std::string& firmware) {
+                           const std::string& model, const std::string& firmware,const std::atomic<bool>* cancel) {
     if(model!="PB743G" || firmware!="U743g.6.11.1683")
         throw std::runtime_error("Native position application is not verified on this firmware");
     if(!expected.indexed || !expected.has_settings || expected.fast_hash.size()!=32 ||
         expected.fast_hash.find_first_not_of("0123456789ABCDEF")!=std::string::npos ||
         readest_start_cfi(cfi).empty())
         throw std::runtime_error("Open and close the downloaded book once before applying Readest progress");
-    apply_position(database,directory,expected.book_path,expected.fast_hash,cfi,&expected);
+    return apply_position(database,directory,expected.book_path,expected.fast_hash,cfi,&expected,cancel);
 }
 } // namespace readest

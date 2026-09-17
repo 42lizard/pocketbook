@@ -36,8 +36,10 @@ int main(int argc, char** argv) {
         try {
             auto expected=readest::native_position(argv[2],argv[4]);
             if(std::string(argv[5])=="stale") expected.timestamp="99";
-            readest::apply_native_position(argv[2],argv[3],expected,argv[6],"PB743G",
+            const auto applied=readest::apply_native_position(argv[2],argv[3],expected,argv[6],"PB743G",
                 std::string(argv[5])=="firmware"?"unknown":"U743g.6.11.1683");
+            if(!applied.warning.empty()) std::cerr<<applied.warning<<'\n';
+            if(applied.status==readest::NativeApplyStatus::Uncertain) return 1;
         } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
     } else if (argc == 4 && std::string(argv[1]) == "trial") {
         try { readest::apply_readest_trial(argv[2], argv[3]); }

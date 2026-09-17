@@ -39,7 +39,8 @@ public:
     void register_downloads(const std::string& user,const std::vector<StoredBook>& books);
     std::map<std::string,SavedSync> syncs(const std::string& user);
     SavedSync sync(const std::string& user, const std::string& hash);
-    void save_sync(const std::string& user, const std::string& hash, const SavedSync& next);
+    // Returns the revision committed by this write.
+    long long save_sync(const std::string& user, const std::string& hash, const SavedSync& next);
 private:
     sqlite3* db_ = nullptr;
 };

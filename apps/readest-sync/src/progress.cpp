@@ -103,7 +103,7 @@ SyncAction sync_managed(Cloud& cloud, State& state, const ManagedBook& book,
     if(cloud.session().user_id.empty() || book.path.empty()) throw std::runtime_error("Download this book before syncing");
     return sync_managed(cloud,state,VerifiedManagedBook(book),local,now,choice,displayed_revision,native_progress);
 }
-SyncAction sync_managed(Cloud& cloud, State& state, const VerifiedManagedBook& verified,
+static std::pair<SyncAction,SavedSync> reconcile_progress(Cloud& cloud, State& state, const VerifiedManagedBook& verified,
                         const std::string& local, long long now,
                         ProgressChoice choice, long long displayed_revision, const std::string& native_progress) {
     const auto& book=verified.book();
@@ -130,7 +130,7 @@ SyncAction sync_managed(Cloud& cloud, State& state, const VerifiedManagedBook& v
         action=SyncAction::ApplyRemote;
     if(choice!=ProgressChoice::Automatic) {
         if(!decision_current) {
-            state.save_sync(user,book.book.hash,saved); return SyncAction::Conflict;
+            saved.revision=state.save_sync(user,book.book.hash,saved); return {SyncAction::Conflict,saved};
         }
         if(action==SyncAction::Conflict || action==SyncAction::BackwardUnsupported) {
             const auto local_point=point_cfi(local), remote_point=readest_start_cfi(remote.location);
@@ -150,11 +150,11 @@ SyncAction sync_managed(Cloud& cloud, State& state, const VerifiedManagedBook& v
         auto fresh=fetch_progress(cloud,book.book.hash,now);
         if(fresh.config!=remote.config || fresh.exists!=remote.exists) {
             saved.positions.remote=fresh.location; saved.remote_config=fresh.config;
-            state.save_sync(user,book.book.hash,saved); return SyncAction::Conflict;
+            saved.revision=state.save_sync(user,book.book.hash,saved); return {SyncAction::Conflict,saved};
         }
         // Persist observations before POST so an uncertain transport outcome
         // never advances the successful-sync baseline.
-        state.save_sync(user,book.book.hash,saved); ++saved.revision;
+        saved.revision=state.save_sync(user,book.book.hash,saved);
         if(remote.updated_at>now*1000+5*60*1000)
             throw std::runtime_error("Readest timestamp is ahead; check the device clock");
         const auto stamp=std::max(now*1000,remote.updated_at+1);
@@ -167,7 +167,7 @@ SyncAction sync_managed(Cloud& cloud, State& state, const VerifiedManagedBook& v
         if(verified.location!=point_cfi(local) || !verified.xpointer.empty() ||
             (remote.exists && !same_content(verified.config,payload))) {
             saved.positions.remote=verified.location; saved.remote_config=verified.config;
-            state.save_sync(user,book.book.hash,saved); return SyncAction::Conflict;
+            saved.revision=state.save_sync(user,book.book.hash,saved); return {SyncAction::Conflict,saved};
         }
         saved.positions.remote=verified.location; saved.remote_config=verified.config;
         saved.positions.last_local=local; saved.positions.last_remote=verified.location;
@@ -178,7 +178,65 @@ SyncAction sync_managed(Cloud& cloud, State& state, const VerifiedManagedBook& v
         saved.positions.last_local=local; saved.positions.last_remote=remote.location;
         saved.positions.has_baseline=true;
     }
-    state.save_sync(user,book.book.hash,saved);
-    return action;
+    saved.revision=state.save_sync(user,book.book.hash,saved);
+    return {action,saved};
+}
+SyncAction sync_managed(Cloud& cloud,State& state,const VerifiedManagedBook& verified,
+    const std::string& local,long long now,ProgressChoice choice,long long displayed_revision,const std::string& native_progress) {
+    return reconcile_progress(cloud,state,verified,local,now,choice,displayed_revision,native_progress).first;
+}
+ProgressTransition transition_progress(Cloud& cloud,State& state,const VerifiedManagedBook& verified,
+    const NativePosition& native,long long now,ProgressChoice choice,long long displayed_revision,
+    bool open,const NativeResumeContext& context,const std::atomic<bool>& cancel) {
+    const auto& book=verified.book();
+    if(native.book_path!=book.path) throw std::runtime_error("Native observation belongs to a different book");
+    auto check_cancel=[&] { if(cancel.load()) throw std::runtime_error("Cancelled."); };
+    check_cancel();
+    ProgressTransition result;
+    SavedSync saved;
+    const auto user=cloud.session().user_id;
+    try {
+        auto reconciled=reconcile_progress(cloud,state,verified,native.cfi,now,choice,displayed_revision,native.progress);
+        result.action=reconciled.first; saved=std::move(reconciled.second);
+    } catch(const std::exception& error) {
+        if(!open || cancel.load()) throw;
+        result.outcome=ResumeOutcome::SyncUnavailable; result.error=error.what();
+        result.revision=state.sync(cloud.session().user_id,book.book.hash).revision;
+        return result;
+    }
+    result.revision=saved.revision;
+    if(result.action==SyncAction::Conflict || result.action==SyncAction::BackwardUnsupported) {
+        const auto remote=readest_start_cfi(saved.positions.remote);
+        if(!native.cfi.empty() && !remote.empty()) result.position_order=compare_cfi(native.cfi,remote);
+    }
+    if(!open) return result;
+    if(result.action==SyncAction::Conflict || result.action==SyncAction::Unsupported || result.action==SyncAction::BackwardUnsupported) {
+        result.outcome=ResumeOutcome::Blocked; return result;
+    }
+    result.outcome=ResumeOutcome::NoPending;
+    if(saved.pending_remote.empty()) return result;
+    if(!native.indexed || !native.has_settings) { result.outcome=ResumeOutcome::NeedsNativeSettings; return result; }
+    if(native.cfi!=saved.positions.local) throw std::runtime_error("Local position changed. Sync again before opening.");
+    if(state.sync(user,book.book.hash).revision!=saved.revision)
+        throw std::runtime_error("Reading state changed before native resume. Sync again.");
+    check_cancel();
+    const auto applied=apply_native_position(context.database,context.audit_directory,native,saved.pending_remote,context.model,context.firmware,&cancel);
+    if(applied.status==NativeApplyStatus::Uncertain) {
+        result.outcome=ResumeOutcome::CommitUncertain; result.error=applied.warning; return result;
+    }
+    result.warning=applied.warning;
+    // Cancellation cannot skip recording a native mutation that already committed.
+    saved.positions.local=saved.pending_remote;
+    saved.positions.last_local=saved.pending_remote; saved.positions.last_remote=saved.positions.remote;
+    saved.positions.has_baseline=true; saved.pending_remote.clear();
+    try {
+        result.revision=state.save_sync(user,book.book.hash,saved);
+    } catch(const std::exception& error) {
+        result.outcome=ResumeOutcome::AppliedUnrecorded;
+        result.error="PocketBook position changed, but synchronization state could not be recorded. Sync again before opening. "+std::string(error.what());
+        return result;
+    }
+    result.outcome=ResumeOutcome::Applied;
+    return result;
 }
 } // namespace readest

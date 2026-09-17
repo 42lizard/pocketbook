@@ -92,36 +92,20 @@ void ApplicationService::synchronize(const Request& request, OperationResult& re
     const auto& book=verified.book();
     const auto native=capture(book.path);
     const bool open=request.command==Command::Open;
-    bool synced=true;
-    try {
-        result.sync_action=sync_managed(*cloud_,*state_,verified,native.cfi,time(nullptr),request.choice,request.revision,native.progress);
-        result.outcome=Outcome::Synced;
-    } catch(const std::exception& error) {
-        if(!open || cancel.load()) throw;
-        synced=false; result.outcome=Outcome::SyncUnavailable; result.error=error.what();
-    }
-    auto saved=state_->sync(request.book.account,request.book.hash); result.revision=saved.revision;
-    if(synced && (result.sync_action==SyncAction::Conflict || result.sync_action==SyncAction::BackwardUnsupported)) {
-        const auto remote=readest_start_cfi(saved.positions.remote);
-        if(!native.cfi.empty() && !remote.empty()) result.position_order=compare_cfi(native.cfi,remote);
-    }
-    if(!open) return;
-    if(synced && (result.sync_action==SyncAction::Conflict || result.sync_action==SyncAction::Unsupported ||
-                  result.sync_action==SyncAction::BackwardUnsupported)) return;
-    if(synced && !saved.pending_remote.empty()) {
-        if(!native.indexed || !native.has_settings) result.outcome=Outcome::NeedsNativeSettings;
-        else {
-            if(native.cfi!=saved.positions.local) throw std::runtime_error("Local position changed. Sync again before opening.");
-            const auto audit=config_.root+"/native-"+std::to_string(time(nullptr))+"-"+std::to_string(getpid())+"-"+std::to_string(++sequence_);
-            check_cancel(cancel);
-            apply_native_position(config_.database,audit,native,saved.pending_remote,config_.model,config_.firmware);
-            // Finish recording an applied position even if cancellation arrives during the write.
-            saved.positions.local=saved.pending_remote;
-            saved.positions.last_local=saved.pending_remote; saved.positions.last_remote=saved.positions.remote;
-            saved.positions.has_baseline=true; saved.pending_remote.clear();
-            state_->save_sync(request.book.account,request.book.hash,saved);
-            result.revision=saved.revision+1; result.outcome=Outcome::Applied;
-        }
+    const auto audit=config_.root+"/native-"+std::to_string(time(nullptr))+"-"+std::to_string(getpid())+"-"+std::to_string(++sequence_);
+    const auto transition=transition_progress(*cloud_,*state_,verified,native,time(nullptr),request.choice,request.revision,
+        open,{config_.database,audit,config_.model,config_.firmware},cancel);
+    result.sync_action=transition.action; result.revision=transition.revision;
+    result.position_order=transition.position_order; result.error=transition.error; result.progress_warning=transition.warning;
+    result.outcome=Outcome::Synced;
+    switch(transition.outcome) {
+    case ResumeOutcome::NotRequested: case ResumeOutcome::Blocked: return;
+    case ResumeOutcome::NoPending: break;
+    case ResumeOutcome::NeedsNativeSettings: result.outcome=Outcome::NeedsNativeSettings; break;
+    case ResumeOutcome::Applied: result.outcome=Outcome::Applied; break;
+    case ResumeOutcome::SyncUnavailable: result.outcome=Outcome::SyncUnavailable; break;
+    case ResumeOutcome::AppliedUnrecorded: result.outcome=Outcome::AppliedUnrecorded; return;
+    case ResumeOutcome::CommitUncertain: result.outcome=Outcome::NativeCommitUncertain; return;
     }
     check_cancel(cancel); result.open_path=book.path;
 }
@@ -227,7 +211,13 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
     }
     // Recovery/read errors never escape the worker completion boundary.
     if(request.command!=Command::Covers && !cancel.load()) try { result.library=snapshot(); }
-    catch(const std::exception& error) { result.outcome=Outcome::Failed; result.error=error.what(); result.open_path.clear(); }
+    catch(const std::exception& error) {
+        if(result.outcome==Outcome::AppliedUnrecorded || result.outcome==Outcome::NativeCommitUncertain)
+            result.error+=" Library snapshot failed: "+std::string(error.what());
+        else if(result.outcome==Outcome::Applied) result.progress_warning+=" Library snapshot failed: "+std::string(error.what());
+        else { result.outcome=Outcome::Failed; result.error=error.what(); }
+        result.open_path.clear();
+    }
     trace("operation.end");
     return result;
 }

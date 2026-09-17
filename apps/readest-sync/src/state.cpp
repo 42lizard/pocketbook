@@ -298,7 +298,7 @@ SavedSync State::sync(const std::string& user, const std::string& hash) {
     }
     return s;
 }
-void State::save_sync(const std::string& user, const std::string& hash, const SavedSync& next) {
+long long State::save_sync(const std::string& user, const std::string& hash, const SavedSync& next) {
     identity(user,hash);
     sql(db_, "BEGIN IMMEDIATE");
     try {
@@ -309,6 +309,7 @@ void State::save_sync(const std::string& user, const std::string& hash, const Sa
         q.bind(5,next.positions.last_local); q.bind(6,next.positions.last_remote); q.bind(7,next.positions.has_baseline?1LL:0LL);
         q.bind(8,next.pending_remote); q.bind(9,next.remote_config); q.bind(10,next.revision+1); q.row();
         sql(db_, "COMMIT");
+        return next.revision+1;
     } catch (...) { sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); throw; }
 }
 std::vector<std::string> recover_downloads(State& state, const std::string& user, const std::string& root) {

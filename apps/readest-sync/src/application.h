@@ -38,7 +38,7 @@ struct Request {
     long long revision=0;
 };
 enum class Outcome { Ready, SessionInvalid, SignedIn, SignedOut, Refreshed, Scanned, Downloaded, Reused,
-    Synced, LocalOpen, SyncUnavailable, NeedsNativeSettings, Applied, Failed, Cancelled };
+    Synced, LocalOpen, SyncUnavailable, NeedsNativeSettings, Applied, AppliedUnrecorded, NativeCommitUncertain, Failed, Cancelled };
 struct OperationResult {
     LibrarySnapshot library;
     std::vector<std::pair<BookId,std::string>> cover_updates;
@@ -50,7 +50,7 @@ struct OperationResult {
     int position_order=0;
     size_t matched=0;
     int covers=0, absent=0, failed_covers=0;
-    std::string error, metadata_error, recovery_warning, open_path;
+    std::string error, metadata_error, recovery_warning, progress_warning, open_path;
 };
 // Called exclusively by one sequential operation runner. No Qt or screen state.
 class ApplicationService {

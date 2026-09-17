@@ -13,7 +13,7 @@ QString syncMessage(SyncAction action) {
     default: return "Reading positions are synchronized.";
     }
 }
-QString resultMessage(const OperationResult& result) {
+QString baseResultMessage(const OperationResult& result) {
     const auto error=QString::fromStdString(result.error);
     if(!result.recovery_warning.empty()) return "Some downloads need attention: "+QString::fromStdString(result.recovery_warning);
     switch(result.outcome) {
@@ -36,10 +36,14 @@ QString resultMessage(const OperationResult& result) {
     case Outcome::SyncUnavailable: return "Opening saved local position. Sync unavailable: "+error;
     case Outcome::NeedsNativeSettings: return "Open once, close with Back, then Sync. If positions differ, choose Use Readest position, then Open.";
     case Outcome::Applied: return "Readest position applied.";
-    case Outcome::Failed: return error;
+    case Outcome::AppliedUnrecorded: case Outcome::NativeCommitUncertain: case Outcome::Failed: return error;
     case Outcome::Cancelled: return "Cancelled.";
     }
     return {};
+}
+QString resultMessage(const OperationResult& result) {
+    const auto message=baseResultMessage(result);
+    return result.progress_warning.empty()?message:message+" "+QString::fromStdString(result.progress_warning);
 }
 QString operationMessage(Command command) {
     switch(command) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <atomic>
 #include <vector>
 #include <map>
 
@@ -56,8 +57,17 @@ std::map<std::string,double> native_percentages(const std::string& snapshot,
 void backup_native_database(const std::string& source, const std::string& destination);
 // Call only for an explicit Open on a validated managed EPUB. Requires the same
 // state seen at reconciliation; retains a complete backup and touches two fields.
-void apply_native_position(const std::string& database, const std::string& backup_directory,
+enum class NativeApplyStatus { Committed, Uncertain };
+struct NativeApplyResult {
+    NativeApplyStatus status=NativeApplyStatus::Committed;
+    std::string warning;
+};
+// Pre-commit failures throw. Post-commit audit failure returns a warning;
+// an unconfirmed commit/rollback returns Uncertain, never a false no-write claim.
+// Cancellation is honored immediately before UPDATE; after mutation, finish commit.
+[[nodiscard]] NativeApplyResult apply_native_position(const std::string& database, const std::string& backup_directory,
                            const NativePosition& expected, const std::string& readest_cfi,
-                           const std::string& model, const std::string& firmware);
+                           const std::string& model, const std::string& firmware,
+                           const std::atomic<bool>* cancel=nullptr);
 
 } // namespace readest

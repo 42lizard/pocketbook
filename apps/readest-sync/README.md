@@ -30,6 +30,16 @@ initialize/sign-in, refresh, discovery, download-or-reuse, sync and open prepara
 It is part of the Qt-free `readest-core` library and returns structured outcomes
 and library snapshots. A book request is validated against its signed-in account.
 
+The progress module owns reconciliation and the staged native-resume transition.
+Sync stages incoming progress; explicit Open reconciles fresh observations before
+applying it. The native writer retains its guarded transaction and backups, while
+the progress module finalizes the baseline and returns the committed app-state
+revision. Cancellation after a native commit still allows that finalization.
+A failed final audit marker is reported separately from a failed position write.
+If native progress changed but app-state recording failed, the app reports that
+partial outcome and does not open the reader; the next Sync reconciles fresh state.
+An uncertain native commit is also reported explicitly, without an automatic retry.
+
 `OperationRunner` runs one operation at a time, joins it before publishing its
 result, and owns cancellation, network timeout and keepalive timing. Device
 connection callbacks retain their own lifetime token: a late callback cannot
@@ -59,7 +69,9 @@ model getters perform no filesystem or database I/O. Cloud cover decoding remain
 in the bounded image provider. Screens and shared QML controls are separate files.
 
 Tests link production sources normally. The headless application test needs no
-Qt or network connection. The `cover-loader` CTest check uses controlled deferred
+Qt or network connection. The `resume` check uses real SQLite fixtures and
+controlled database/filesystem faults to verify native resume and partial failures.
+The `cover-loader` CTest check uses controlled deferred
 work and completions to exercise cancellation, retries and account/page changes. Qt tests exercise public
 commands, independent controller instances, stable book identities, filtering,
 worker shutdown and late callbacks; simulator scenarios cover native sync and
