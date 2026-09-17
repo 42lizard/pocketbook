@@ -333,6 +333,18 @@ waits for that callback to finish. If it never finishes, close and reopen the ap
 On InkPad, test both a fresh connection and an online action after Wi-Fi has
 been idle. A visible Wi-Fi icon alone does not establish that DNS is working.
 
+### Cloud removal and missing EPUBs
+
+Refresh reflects removals from Readest. A removed book with a local copy stays
+visible as **Removed from Readest** and remains readable offline. **Re-upload to
+Readest** explicitly restores it; refresh and normal sync never restore it
+automatically or delete the PocketBook copy. Removed entries without local
+files disappear from the library view.
+
+If Readest has book/progress metadata but no EPUB, a matching local copy offers
+**Upload EPUB to Readest**. Upload checks cloud files independently of metadata,
+retains existing cloud metadata, and uses normal progress conflict handling.
+
 ### Recovery
 
 If a managed EPUB was deleted or moved, its details offer **Download EPUB** again.
@@ -422,6 +434,11 @@ refresh, all library pages (especially 8/9), Wi-Fi recovery, an EPUB download,
 Read offline, native-reader return, and both progress conflict choices.
 
 ## PocketBook library and uploads
+
+For a linked book with an EPUB on the device and in Readest, **Upload cover to
+Readest** retries just the embedded cover. It does not resend the EPUB or change
+reading progress. Upload failures include the reservation/transfer HTTP status
+when available; missing or unsupported embedded covers are reported separately.
 
 EPUBs indexed by PocketBook appear alongside your Readest books, including when
 signed out. **On device** includes both linked and device-only books;

@@ -27,7 +27,8 @@ QVariant LibraryModel::data(const QModelIndex& index,int role) const {
     case BookHash: return QString::fromStdString(entry.id.hash);
     case Title: return QString::fromStdString(book.title.empty()?"Untitled":book.title);
     case Author: return QString::fromStdString(book.author);
-    case Availability: return entry.upload_pending?QStringLiteral("Upload pending"):entry.book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry.availability);
+    case Availability: return book.deleted?QStringLiteral("Removed from Readest"):entry.upload_pending?QStringLiteral("Upload pending"):entry.book.local_only?QStringLiteral("PocketBook only"):
+        entry.availability==readest::Availability::OnDevice && entry.book.epubs==0?QStringLiteral("On device · Readest progress only"):availabilityLabel(entry.availability);
     case Cover: return QString::fromStdString(entry.cover);
     case LocalPath: return QString::fromStdString(entry.book.path);
     case LocalProgress: return percentageLabel(entry.local_percentage);

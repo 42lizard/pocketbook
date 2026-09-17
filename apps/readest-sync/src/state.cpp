@@ -187,7 +187,7 @@ void State::apply_page(const std::string& user, long long since, const LibraryPa
     } catch (...) { sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); throw; }
 }
 std::vector<ManagedBook> State::books(const std::string& user) {
-    Query q(db_, "SELECT l.hash,l.title,l.author,l.format,l.raw,l.deleted,l.cursor,d.path,d.sha256,d.size,COALESCE(f.epubs,-1),f.cover_key,f.cover_size,f.cover_stamp FROM library l LEFT JOIN downloads d ON l.user=d.user AND l.hash=d.hash LEFT JOIN book_files f ON f.user=l.user AND f.hash=l.hash WHERE l.user=? AND (l.deleted=0 OR d.path IS NOT NULL) ORDER BY l.title COLLATE NOCASE,l.hash");
+    Query q(db_, "SELECT l.hash,l.title,l.author,l.format,l.raw,l.deleted,l.cursor,d.path,d.sha256,d.size,COALESCE(f.epubs,-1),f.cover_key,f.cover_size,f.cover_stamp FROM library l LEFT JOIN downloads d ON l.user=d.user AND l.hash=d.hash LEFT JOIN book_files f ON f.user=l.user AND f.hash=l.hash WHERE l.user=? ORDER BY l.title COLLATE NOCASE,l.hash");
     q.bind(1,user); std::vector<ManagedBook> result;
     while (q.row()) {
         ManagedBook b; b.book.hash=q.text(0); b.book.title=q.text(1); b.book.author=q.text(2);
@@ -225,6 +225,7 @@ std::vector<ManagedBook> State::books(const std::string& user) {
         else if(b.sha256.empty()) b.sha256=chosen->sha256;
         b.size=chosen->size;
     }
+    result.erase(std::remove_if(result.begin(),result.end(),[](const auto& b) { return b.book.deleted && b.path.empty(); }),result.end());
     std::sort(result.begin(),result.end(),[](const auto& a,const auto& b) { return std::tie(a.book.title,a.book.hash)<std::tie(b.book.title,b.book.hash); });
     return result;
 }
@@ -235,12 +236,16 @@ void State::save_book_files(const std::string& user,const std::map<std::string,B
         for(const auto& book:library) {
             const auto found=files.find(book.book.hash);
             const BookFiles info=found==files.end()?BookFiles():found->second;
-            Query q(db_,"INSERT OR REPLACE INTO book_files VALUES(?,?,?,?,?,?)");
-            q.bind(1,user); q.bind(2,book.book.hash); q.bind(3,info.epubs);
-            q.bind(4,info.cover_key); q.bind(5,info.cover_size); q.bind(6,info.cover_stamp); q.row();
+            save_book_file(user,book.book.hash,info);
         }
         sql(db_,"COMMIT");
     } catch(...) { sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr); throw; }
+}
+void State::save_book_file(const std::string& user,const std::string& hash,const BookFiles& info) {
+    identity(user,hash);
+    Query q(db_,"INSERT OR REPLACE INTO book_files VALUES(?,?,?,?,?,?)");
+    q.bind(1,user); q.bind(2,hash); q.bind(3,info.epubs);
+    q.bind(4,info.cover_key); q.bind(5,info.cover_size); q.bind(6,info.cover_stamp); q.row();
 }
 void State::register_download(const std::string& user, const std::string& hash, const StoredBook& book) {
     identity(user,hash);

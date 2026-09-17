@@ -43,6 +43,7 @@ public:
     void apply_page(const std::string& user, long long since, const LibraryPage& page);
     std::vector<ManagedBook> books(const std::string& user);
     void save_book_files(const std::string& user,const std::map<std::string,BookFiles>& files);
+    void save_book_file(const std::string& user,const std::string& hash,const BookFiles& file);
     void register_download(const std::string& user, const std::string& hash, const StoredBook& book);
     std::vector<LocalCopy> local_copies();
     void replace_local_copies(const std::vector<LocalCopy>& copies);

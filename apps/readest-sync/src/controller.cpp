@@ -28,6 +28,7 @@ QString baseResultMessage(const OperationResult& result) {
     case Outcome::Downloaded: return "Downloaded and verified. Choose Open to read.";
     case Outcome::Reused: return "Found a matching EPUB on device. Choose Open to read.";
     case Outcome::Uploaded: return "Book available in Readest.";
+    case Outcome::CoverUploaded: return "Cover uploaded to Readest.";
     case Outcome::UploadPending: return "Book uploaded; reading position pending. Retry or resolve the differing positions.";
     case Outcome::CopySelected: return "Local copy selected.";
     case Outcome::Synced: {
@@ -61,6 +62,7 @@ QString operationMessage(Command command) {
     case Command::ReadOffline: return "Opening PocketBook position";
     case Command::Resume: return "Updating PocketBook progress";
     case Command::Upload: return "Uploading book and reading position";
+    case Command::UploadCover: return "Uploading cover to Readest";
     case Command::SelectCopy: return "Selecting local copy";
     case Command::Covers: return "Loading covers";
     }
@@ -94,8 +96,9 @@ QString AppController::title() const {
 }
 QString AppController::hint() const {
     const auto* entry=library_.find(selected_); if(!entry) return {};
-    auto text=(entry->book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry->availability))+". "+QString::fromStdString(entry->book.book.author);
-    if(entry->availability==Availability::ProgressOnly) text+="\nOnly position data is available. Upload the EPUB in Readest, then check again.";
+    auto text=(entry->book.book.deleted?QStringLiteral("Removed from Readest"):entry->book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry->availability))+". "+QString::fromStdString(entry->book.book.author);
+    if(!entry->book.local_only && !entry->book.book.deleted && entry->book.epubs==0)
+        text+=entry->availability==Availability::OnDevice?"\nReadest has progress only. You can upload this local EPUB.":"\nReadest has progress only. No local EPUB is available to upload.";
     text+="\nPocketBook: "+percentageLabel(entry->local_percentage)+" · Readest: "+percentageLabel(entry->remote_percentage);
     return text+"\nPercentages use each reader’s page counts. — means unavailable.";
 }
@@ -112,9 +115,9 @@ QVariantList AppController::actions() const {
         }
         add("back","Back to library");return result;
     }
-    if(entry->book.local_only || !signed_in_) {
+    if(entry->book.local_only || entry->book.book.deleted || !signed_in_) {
         add("offline","Open at PocketBook position");
-        if(signed_in_) add("upload",entry->upload_pending?"Retry upload":"Upload to Readest");
+        if(signed_in_) add("upload",entry->book.book.deleted?"Re-upload to Readest":entry->upload_pending?"Retry upload":"Upload to Readest");
         else add("signin","Sign in to upload");
         if(entry->book.copies.size()>1) add("copies","Choose local copy");
         add("back","Back to library");return result;
@@ -128,6 +131,10 @@ QVariantList AppController::actions() const {
         add("sync","Sync now"); add("offline","Read offline");
     } else if(entry->availability==Availability::Downloadable || entry->availability==Availability::Unknown) add("download","Download EPUB");
     else add("refresh","Check availability");
+    if(!entry->upload_pending && entry->availability==Availability::OnDevice && entry->book.epubs==0)
+        add("upload","Upload EPUB to Readest");
+    if(entry->availability==Availability::OnDevice && entry->book.epubs>0)
+        add("uploadCover","Upload cover to Readest");
     if(choice_==ChoiceState::SyncConflict) {
         add("usePocketBook","Use PocketBook position"); add("useReadest","Use Readest position");
     }
@@ -140,7 +147,7 @@ void AppController::submit(Request request) {
     }
     covers_.show({});
     const bool online=request.command==Command::SignIn || request.command==Command::Refresh || request.command==Command::Download ||
-        request.command==Command::Sync || request.command==Command::Open || request.command==Command::Upload;
+        request.command==Command::Sync || request.command==Command::Open || request.command==Command::Upload || request.command==Command::UploadCover;
     const auto message=operationMessage(request.command);
     // The completion captures no credentials. Service work cannot mutate presentation state.
     Request context; context.command=request.command; context.book=request.book; context.choice=request.choice;
@@ -215,6 +222,7 @@ void AppController::runAction(const QString& command) {
         const auto* entry=library_.find(selected_);
         request.command=Command::SelectCopy;request.local_path=entry->book.copies.at(command.mid(5).toUInt()).path;
     } else if(command=="upload") request.command=Command::Upload;
+    else if(command=="uploadCover") request.command=Command::UploadCover;
     else if(command=="download") request.command=Command::Download;
     else if(command=="offline" || command=="openPocketBook") request.command=Command::ReadOffline;
     else if(command=="open" || command=="openReadest") request.command=Command::Open;

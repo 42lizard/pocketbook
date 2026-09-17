@@ -108,11 +108,14 @@ LibraryPage parse_library_page(const std::string& response, const std::string& u
     return page;
 }
 
-LibraryPage fetch_library_page(Cloud& cloud, long long since, size_t limit, long long now) {
+LibraryPage fetch_library_page(Cloud& cloud, long long since, size_t limit, long long now,
+                               const std::string& hash) {
     if (since < 0 || limit == 0 || limit > 1000) throw std::runtime_error("Invalid library request");
+    if (!hash.empty() && !hash_valid(hash)) throw std::runtime_error("Invalid library book hash");
     for (;;) {
         auto response = cloud.get("/api/sync?type=books&since=" + std::to_string(since) +
-                                  "&limit=" + std::to_string(limit), now);
+                                  "&limit=" + std::to_string(limit) +
+                                  (hash.empty() ? "" : "&book=" + hash), now);
         if (response.status != 200)
             throw std::runtime_error("Library request failed (HTTP " + std::to_string(response.status) + ")");
         auto page=parse_library_page(response.body,cloud.session().user_id,since,0);
@@ -128,11 +131,13 @@ LibraryPage fetch_library_page(Cloud& cloud, long long since, size_t limit, long
         limit=std::min<size_t>(1000,std::max(limit*2,page.books.size()+1));
     }
 }
-std::map<std::string,BookFiles> fetch_book_files(Cloud& cloud,long long now) {
+std::map<std::string,BookFiles> fetch_book_files(Cloud& cloud,long long now,const std::string& hash) {
+    if(!hash.empty() && !hash_valid(hash)) throw std::runtime_error("Invalid storage book hash");
     std::map<std::string,BookFiles> result;
     std::map<std::string,std::string> seen;
     for(int page=1;page<=100;++page) {
-        auto response=cloud.get("/api/storage/list?page="+std::to_string(page)+"&pageSize=1000",now);
+        auto response=cloud.get("/api/storage/list?page="+std::to_string(page)+"&pageSize=1000"+
+                                (hash.empty()?"":"&bookHash="+hash),now);
         if(response.status!=200) throw std::runtime_error("Could not check downloadable books (HTTP "+std::to_string(response.status)+"). Refresh to retry.");
         auto json=parse_json(response.body); auto* files=member(json.get(),"files");
         const auto pages=integer_member(json.get(),"totalPages");

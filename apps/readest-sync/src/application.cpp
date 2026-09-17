@@ -99,7 +99,7 @@ LibrarySnapshot ApplicationService::snapshot() {
         entry.availability=book_availability(book);
         entry.upload_pending=result.signed_in && state_->upload(result.account,book.book.hash).stage!=UploadStage::None;
         const auto saved=syncs.find(book.book.hash); if(saved!=syncs.end()) entry.sync=saved->second;
-        entry.remote_percentage=reading_percentage(book.book.raw,entry.sync.remote_config);
+        entry.remote_percentage=book.book.deleted?-1:reading_percentage(book.book.raw,entry.sync.remote_config);
         const auto image=cover_path(config_.root,result.account,book.book.hash,book.files);
         if(valid_cover(image)) entry.cover=image;
         else if(valid_cover(image+".local.png")) entry.cover=image+".local.png";
@@ -127,6 +127,7 @@ LibrarySnapshot ApplicationService::snapshot() {
 void ApplicationService::synchronize(const Request& request, OperationResult& result, const std::atomic<bool>& cancel) {
     const VerifiedManagedBook verified(resolve(request.book));
     const auto& book=verified.book();
+    if(book.book.deleted) throw std::runtime_error("Removed from Readest. Re-upload this book or read offline.");
     if(book.local_only) throw std::runtime_error("Upload this book to Readest before synchronizing.");
     state_->remember_integrity(book);
     const auto native=capture(book.path);
@@ -225,6 +226,14 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                     const auto stored=download_book(*cloud_,book.book,config_.books_root,config_.ca,time(nullptr),config_.transport.bind_download(cancel));
                     state_->register_download(request.book.account,request.book.hash,stored);
                     result.outcome=Outcome::Downloaded; break;
+                }
+                case Command::UploadCover: {
+                    const VerifiedManagedBook verified(resolve(request.book));
+                    if(verified.book().local_only || verified.book().book.deleted)
+                        throw std::runtime_error("Upload the book to Readest first.");
+                    if(!upload_cover(*cloud_,verified,config_.transport,config_.ca,config_.root,cancel))
+                        throw std::runtime_error("This EPUB has no supported embedded cover.");
+                    result.outcome=Outcome::CoverUploaded;break;
                 }
                 case Command::Upload: {
                     const VerifiedManagedBook verified(resolve(request.book));

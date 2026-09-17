@@ -29,7 +29,7 @@ struct LibrarySnapshot {
     std::string account;
     std::vector<LibraryEntry> books;
 };
-enum class Command { Initialize, SignIn, SignOut, Refresh, Scan, Download, Sync, Open, ReadOffline, Resume, Covers, Upload, SelectCopy };
+enum class Command { Initialize, SignIn, SignOut, Refresh, Scan, Download, Sync, Open, ReadOffline, Resume, Covers, Upload, UploadCover, SelectCopy };
 struct Request {
     Command command=Command::Initialize;
     BookId book;
@@ -39,7 +39,7 @@ struct Request {
     long long revision=0;
 };
 enum class Outcome { Ready, SessionInvalid, SignedIn, SignedOut, Refreshed, Scanned, Downloaded, Reused,
-    Uploaded, UploadPending, CopySelected, Synced, LocalOpen, SyncUnavailable, NeedsNativeSettings, Applied, AppliedUnrecorded, NativeCommitUncertain, Failed, Cancelled };
+    Uploaded, CoverUploaded, UploadPending, CopySelected, Synced, LocalOpen, SyncUnavailable, NeedsNativeSettings, Applied, AppliedUnrecorded, NativeCommitUncertain, Failed, Cancelled };
 struct OperationResult {
     LibrarySnapshot library;
     std::vector<std::pair<BookId,std::string>> cover_updates;

@@ -1,6 +1,7 @@
 #include "application.h"
 #include "json_util.h"
 #include <cassert>
+#include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <sqlite3.h>
@@ -24,14 +25,39 @@ int main(int argc,char** argv) {
         "INSERT INTO files VALUES(1,1,1,'Local.epub',X'00112233445566778899AABBCCDDEEFF');";
     assert(sqlite3_exec(db,schema.c_str(),nullptr,nullptr,nullptr)==SQLITE_OK);
     assert(sqlite3_close(db)==SQLITE_OK);
-    int requests=0,uploads=0; bool fail_position=true,fail_upload=false,fail_metadata=false; std::string remote_book,remote_config;
+    int requests=0,uploads=0,cover_uploads=0; bool fail_position=true,fail_upload=false,fail_metadata=false,fail_cover=false; std::string remote_book,remote_config;
     const auto hash=epub_fingerprint(path);
     std::string auth_account="fixture-user";
+    bool ignore_book_filter=true,remote_epub=false;
     config.transport.request=[&](const std::string& url,const std::string& method,const auto&,const std::string& body,const auto&,size_t,const auto&) -> HttpResponse {
         ++requests;
         if(url.find("grant_type=password")!=std::string::npos) return {200,"{\"access_token\":\"token\",\"refresh_token\":\"refresh\",\"expires_at\":9999999999,\"user\":{\"id\":\""+auth_account+"\"}}",0};
-        if(url.find("/api/storage/upload")!=std::string::npos) return {200,R"({"uploadUrl":"https://storage.test/book"})",0};
-        if(url.find("type=books")!=std::string::npos) return {200,"{\"books\":["+remote_book+"]}",0};
+        if(url.find("/api/storage/list?")!=std::string::npos) {
+            const auto file=remote_epub?"{\"book_hash\":\""+hash+"\",\"file_key\":\"Readest/Books/"+hash+"/"+hash+".epub\",\"file_size\":"+std::to_string(fs::file_size(path))+"}":"";
+            return {200,"{\"files\":["+file+"],\"page\":1,\"totalPages\":1}",0};
+        }
+        if(url.find("/api/storage/upload")!=std::string::npos) {
+            const auto name=string_member(parse_json(body).get(),"fileName");
+            if(name.find(".epub")==std::string::npos) {
+                assert(name=="Readest/Books/"+hash+"/cover.png");
+                return {200,R"({"uploadUrl":"https://storage.test/cover"})",0};
+            }
+            return {200,R"({"uploadUrl":"https://storage.test/book"})",0};
+        }
+        if(url.find("type=books")!=std::string::npos) {
+            // Deployed servers can ignore the optional book filter. An unrelated
+            // first page must not hide the requested book on a later page.
+            assert(url.find("&limit=100")!=std::string::npos);
+            if(!ignore_book_filter || url.find("since=1&")!=std::string::npos)
+                return {200,"{\"books\":["+remote_book+"]}",0};
+            std::string rows;
+            for(int i=0;i<100;++i) {
+                char other[33];snprintf(other,sizeof(other),"%032x",i+1);
+                if(i) rows+=",";
+                rows+="{\"user_id\":\"fixture-user\",\"book_hash\":\""+std::string(other)+"\",\"updated_at\":1}";
+            }
+            return {200,"{\"books\":["+rows+"]}",0};
+        }
         if(url.find("type=configs")!=std::string::npos) return {200,"{\"configs\":["+remote_config+"]}",0};
         if(url.find("/api/sync")!=std::string::npos && method=="POST") {
             auto json=parse_json(body); auto* books=member(json.get(),"books");
@@ -49,8 +75,9 @@ int main(int argc,char** argv) {
         }
         throw std::runtime_error("Unexpected request: "+url);
     };
-    config.transport.upload=[&](const auto&,int,const auto&,size_t size,const auto&) -> HttpResponse {
-        assert(size==fs::file_size(path)); ++uploads; if(fail_upload) throw std::runtime_error("Interrupted upload"); return {200,"",0};
+    config.transport.upload=[&](const auto& url,int,const auto&,size_t size,const auto&) -> HttpResponse {
+        if(url=="https://storage.test/cover") { assert(size==4);++cover_uploads;return {fail_cover?403:200,"",0}; }
+        assert(size==fs::file_size(path)); ++uploads; if(fail_upload) throw std::runtime_error("Interrupted upload"); remote_epub=true;return {200,"",0};
     };
     config.transport.download=[](const auto&,int,const auto&,size_t,const auto&) -> HttpResponse { throw std::runtime_error("No download expected"); };
     std::atomic<bool> cancel{false};
@@ -72,7 +99,7 @@ int main(int argc,char** argv) {
     request={};request.command=Command::Upload;request.book=result.library.books[0].id;
     result=service.execute(request,cancel);
     std::cerr<<"Upload outcome "<<static_cast<int>(result.outcome)<<" error="<<result.error<<" warning="<<result.progress_warning<<" uploads="<<uploads<<"\n";
-    assert(result.outcome==Outcome::UploadPending && uploads==1 && !remote_book.empty());
+    assert(result.outcome==Outcome::UploadPending && uploads==1 && cover_uploads==1 && !remote_book.empty());
     request.command=Command::Open;result=service.execute(request,cancel);
     assert(result.outcome==Outcome::SyncUnavailable && result.library.books[0].upload_pending);
     request.command=Command::Upload;
@@ -85,6 +112,14 @@ int main(int argc,char** argv) {
     assert(result.outcome==Outcome::Uploaded && uploads==1 && !remote_config.empty());
     assert(string_member(parse_json(remote_config).get(),"location")=="epubcfi(/6/4!/4/2/1:0)");
     assert(!result.library.books[0].upload_pending && !result.library.books[0].book.local_only);
+    // Retrying a cover changes neither the EPUB nor reading progress/metadata.
+    const auto saved_config=remote_config,saved_book=remote_book;
+    request.command=Command::UploadCover;fail_cover=true;
+    result=restarted.execute(request,cancel);
+    assert(result.outcome==Outcome::Failed && result.error.find("HTTP 403")!=std::string::npos);
+    fail_cover=false;result=restarted.execute(request,cancel);
+    assert(result.outcome==Outcome::CoverUploaded && uploads==1 && cover_uploads==3);
+    assert(remote_config==saved_config && remote_book==saved_book);
     request.command=Command::SignOut;result=restarted.execute(request,cancel);
     assert(!result.library.signed_in && result.library.books.size()==1);
     // Different local copies require an explicit selection, retained on restart.
@@ -104,8 +139,9 @@ int main(int argc,char** argv) {
     assert(sqlite3_open(config.database.c_str(),&db)==SQLITE_OK);
     assert(sqlite3_exec(db,"DELETE FROM books_settings",nullptr,nullptr,nullptr)==SQLITE_OK);
     assert(sqlite3_close(db)==SQLITE_OK);
+    ignore_book_filter=false; // Also exercise servers honoring the filter.
     // A reservation is not a completed upload; a restart never retries on its own.
-    config.root=base+"/retry-state";remote_book.clear();remote_config.clear();fail_upload=true;
+    config.root=base+"/retry-state";remote_book.clear();remote_config.clear();remote_epub=false;fail_upload=true;
     ApplicationService interrupted(config);result=interrupted.execute({},cancel);
     request={};request.command=Command::SignIn;request.email="test";request.password="test";
     result=interrupted.execute(request,cancel);request={};request.book=result.library.books[0].id;request.command=Command::Upload;
@@ -142,8 +178,39 @@ int main(int argc,char** argv) {
     result=existing.execute(request,cancel);request={};request.book=result.library.books[0].id;request.command=Command::Upload;
     before=uploads;const auto prior_remote=remote_config;result=existing.execute(request,cancel);
     assert(result.outcome==Outcome::UploadPending && result.sync_action==SyncAction::Conflict && uploads==before && remote_config==prior_remote);
+    // Broader lookup responses must still reject foreign accounts and tombstones.
+    const auto saved_remote=remote_book;
+    remote_book.replace(remote_book.find("fixture-user"),12,"another-user");
+    result=existing.execute(request,cancel);
+    assert(result.outcome==Outcome::Failed && result.error=="Library account identity mismatch" && uploads==before);
+    remote_book=saved_remote;
+    // A progress record is not proof that the EPUB exists: upload missing bytes,
+    // retain the remote position and surface the existing position conflict.
+    remote_epub=false;result=existing.execute(request,cancel);
+    assert(uploads==before+1 && remote_epub && result.outcome==Outcome::UploadPending && remote_config==prior_remote);
+    before=uploads;
+    remote_book=saved_remote;remote_book.insert(remote_book.size()-1,",\"deleted_at\":2");
+    remote_epub=false;
+    request.command=Command::Refresh;result=existing.execute(request,cancel);
+    assert(result.outcome==Outcome::Refreshed && result.library.books.size()==1);
+    assert(result.library.books[0].book.book.deleted && result.library.books[0].book.path==path && fs::exists(path));
+    assert(result.library.books[0].remote_percentage<0);
+    request.command=Command::Sync;result=existing.execute(request,cancel);
+    assert(result.outcome==Outcome::Failed && uploads==before && remote_config==prior_remote);
+    request.command=Command::Upload;result=existing.execute(request,cancel);
+    assert(result.outcome==Outcome::UploadPending && uploads==before+1 && remote_epub && remote_config==prior_remote);
+    assert(!result.library.books[0].book.book.deleted);
+    // If cloud bytes disappear during a publication retry, send them again.
+    config.root=base+"/deleted-during-retry";remote_book.clear();remote_config.clear();remote_epub=false;fail_metadata=true;
+    ApplicationService missingRetry(config);missingRetry.execute({},cancel);
+    request={};request.command=Command::SignIn;request.email="test";request.password="test";
+    result=missingRetry.execute(request,cancel);request={};request.book=result.library.books[0].id;request.command=Command::Upload;
+    before=uploads;result=missingRetry.execute(request,cancel);
+    assert(result.outcome==Outcome::Failed && remote_epub && uploads==before+1);
+    remote_epub=false;fail_metadata=false;result=missingRetry.execute(request,cancel);
+    assert(result.outcome==Outcome::Uploaded && remote_epub && uploads==before+2);
     // Unsupported native progress reports a warning; the book still uploads.
-    config.root=base+"/unsupported-state";remote_book.clear();remote_config.clear();
+    config.root=base+"/unsupported-state";remote_book.clear();remote_config.clear();remote_epub=false;
     assert(sqlite3_open(config.database.c_str(),&db)==SQLITE_OK);
     assert(sqlite3_exec(db,"UPDATE books_settings SET position='unsupported native location'",nullptr,nullptr,nullptr)==SQLITE_OK);
     assert(sqlite3_close(db)==SQLITE_OK);
