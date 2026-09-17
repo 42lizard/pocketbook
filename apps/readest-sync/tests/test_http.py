@@ -64,6 +64,11 @@ class TransportTests(unittest.TestCase):
                     self.end_headers()
                     self.wfile.write(payload)
 
+            def do_PUT(self):
+                if self.path == "/slow":
+                    time.sleep(2)
+                self.do_POST()
+
             def do_POST(self):
                 body = self.rfile.read(int(self.headers['Content-Length']))
                 cls.requests.append((self.path, self.headers.get('Authorization'), body))
@@ -117,6 +122,11 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(result.stdout, '200\n8192\n' + 'x' * 8192)
         self.assertEqual(self.requests[-1], ('/large', None, b''))
 
+    def test_upload_stream_has_no_bearer(self):
+        result = self.run_request('/upload', 'UPLOAD')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.requests[-1], ('/upload', None, b'u' * 8192))
+
     def test_cancelled_worker_aborts_transport(self):
         before = len(self.requests)
         result = self.run_request('/', 'CANCEL')
@@ -127,7 +137,7 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(len(self.requests), before)
 
     def test_cancel_active_request_and_download_then_reuse_adapter(self):
-        for mode in ['LATE_CANCEL_GET', 'LATE_CANCEL_DOWNLOAD']:
+        for mode in ['LATE_CANCEL_GET', 'LATE_CANCEL_DOWNLOAD', 'LATE_CANCEL_UPLOAD']:
             result = self.run_request('/slow', mode, limit=200000)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, 'Cancelled active transfer; next operation succeeded.')

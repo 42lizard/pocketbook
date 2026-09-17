@@ -31,7 +31,7 @@ void VisibleCoverLoader::publish(const BookId& id,const std::string& path) {
     }
 }
 void VisibleCoverLoader::pump() {
-    if(active_ || account_.empty()) return;
+    if(active_) return;
     for(const auto& entry:visible_) {
         if(entry.id.account!=account_ || !entry.cover.empty()) continue;
         if(const auto found=ready_.find(key(entry.id)); found!=ready_.end()) {
@@ -43,10 +43,10 @@ void VisibleCoverLoader::pump() {
             schedule(); return; // Yield between native UI-thread extractions.
         }
     }
-    if(!remote_enabled_) return;
+    if(!remote_enabled_ || account_.empty()) return;
     std::vector<BookId> ids;
     for(const auto& entry:visible_) {
-        if(entry.id.account==account_ && entry.cover.empty() && !entry.book.book.deleted && !remote_attempts_.count(key(entry.id)))
+        if(entry.id.account==account_ && entry.cover.empty() && !entry.book.local_only && !entry.book.book.deleted && !remote_attempts_.count(key(entry.id)))
             ids.push_back(entry.id);
         if(ids.size()==6) break;
     }

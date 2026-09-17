@@ -27,7 +27,7 @@ QVariant LibraryModel::data(const QModelIndex& index,int role) const {
     case BookHash: return QString::fromStdString(entry.id.hash);
     case Title: return QString::fromStdString(book.title.empty()?"Untitled":book.title);
     case Author: return QString::fromStdString(book.author);
-    case Availability: return availabilityLabel(entry.availability);
+    case Availability: return entry.upload_pending?QStringLiteral("Upload pending"):entry.book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry.availability);
     case Cover: return QString::fromStdString(entry.cover);
     case LocalPath: return QString::fromStdString(entry.book.path);
     case LocalProgress: return percentageLabel(entry.local_percentage);
@@ -46,6 +46,7 @@ void LibraryModel::rebuild() {
         const auto& entry=entries_[i];
         if(filter_==1 && entry.availability!=readest::Availability::Downloadable) continue;
         if(filter_==2 && entry.availability!=readest::Availability::OnDevice) continue;
+        if(filter_==4 && !entry.book.local_only) continue;
         if(filter_==3 && entry.availability!=readest::Availability::ProgressOnly) continue;
         if(QString::fromStdString(entry.book.book.title+" "+entry.book.book.author).contains(search_,Qt::CaseInsensitive)) visible_.push_back(i);
     }
@@ -58,7 +59,7 @@ void LibraryModel::search(const QString& text) {
     beginResetModel(); search_=text; page_=0; rebuild(); endResetModel(); emit navigationChanged();
 }
 void LibraryModel::filter(int value) {
-    if(value<0 || value>3) return;
+    if(value<0 || value>4) return;
     beginResetModel(); filter_=value; page_=0; rebuild(); endResetModel(); emit navigationChanged();
 }
 void LibraryModel::setCapacity(int value) {

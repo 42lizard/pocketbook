@@ -116,14 +116,7 @@ size_t discover_device_books(State& state, const std::string& user,
         if (extension != ".epub") continue;
         if(known.count(path)) continue;
         ++measured.candidates;
-#ifdef __APPLE__
-        const auto modified=st.st_mtimespec,changed=st.st_ctimespec;
-#else
-        const auto modified=st.st_mtim,changed=st.st_ctim;
-#endif
-        const auto stamp=std::to_string(st.st_dev)+":"+std::to_string(st.st_ino)+":"+std::to_string(st.st_size)+":"+
-            std::to_string(modified.tv_sec)+":"+std::to_string(modified.tv_nsec)+":"+
-            std::to_string(changed.tv_sec)+":"+std::to_string(changed.tv_nsec);
+        const auto stamp=epub_file_stamp(st);
         std::string hash;
         const auto previous=cached.find(path);
         if(previous!=cached.end() && previous->second.first==stamp) { hash=previous->second.second; ++measured.cache_hits; }
@@ -166,6 +159,10 @@ State::State(const std::string& path) {
             "CREATE TABLE IF NOT EXISTS sync(user TEXT NOT NULL,hash TEXT NOT NULL,local TEXT NOT NULL,remote TEXT NOT NULL,last_local TEXT NOT NULL,last_remote TEXT NOT NULL,baseline INTEGER NOT NULL,pending TEXT NOT NULL,config TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(user,hash));"
             "CREATE TABLE IF NOT EXISTS book_files(user TEXT NOT NULL,hash TEXT NOT NULL,epubs INTEGER NOT NULL,cover_key TEXT NOT NULL,cover_size INTEGER NOT NULL,cover_stamp INTEGER NOT NULL,PRIMARY KEY(user,hash));"
             "CREATE TABLE IF NOT EXISTS scan_cache(path TEXT PRIMARY KEY,stamp TEXT NOT NULL,hash TEXT NOT NULL);"
+            "CREATE TABLE IF NOT EXISTS local_copies(path TEXT PRIMARY KEY,stamp TEXT,hash TEXT,title TEXT,author TEXT,position TEXT,size INTEGER);"
+            "CREATE TABLE IF NOT EXISTS copy_choices(user TEXT,hash TEXT,path TEXT,PRIMARY KEY(user,hash));"
+            "CREATE TABLE IF NOT EXISTS local_integrity(path TEXT PRIMARY KEY,stamp TEXT,sha256 TEXT);"
+            "CREATE TABLE IF NOT EXISTS uploads(user TEXT,hash TEXT,stage INTEGER,sha256 TEXT,PRIMARY KEY(user,hash));"
             "PRAGMA user_version=1; COMMIT;");
     } catch (...) { sqlite3_close(db_); db_ = nullptr; throw; }
 }
@@ -200,6 +197,35 @@ std::vector<ManagedBook> State::books(const std::string& user) {
         if(missing_download(b.path)) b.path.clear();
         result.push_back(b);
     }
+    std::map<std::string,size_t> by_hash;
+    for(size_t i=0;i<result.size();++i) by_hash[result[i].book.hash]=i;
+    for(const auto& copy:local_copies()) {
+        if(missing_download(copy.path)) continue;
+        auto found=by_hash.find(copy.hash);
+        if(found==by_hash.end()) {
+            ManagedBook b; b.local_only=true; b.book.hash=copy.hash; b.book.title=copy.title;
+            b.book.author=copy.author; b.book.format="EPUB";
+            by_hash[copy.hash]=result.size(); result.push_back(b);
+        }
+        result[by_hash[copy.hash]].copies.push_back(copy);
+    }
+    std::map<std::string,std::string> choices;
+    Query selected(db_,"SELECT hash,path FROM copy_choices WHERE user=?"); selected.bind(1,user);
+    while(selected.row()) choices[selected.text(0)]=selected.text(1);
+    for(auto& b:result) if(!b.copies.empty()) {
+        const LocalCopy* chosen=nullptr;
+        for(const auto& copy:b.copies) if(copy.path==choices[b.book.hash]) chosen=&copy;
+        if(!chosen && b.copies.size()>1) {
+            const auto& position=b.copies.front().position;
+            for(const auto& copy:b.copies) if(copy.position!=position) b.needs_copy_choice=true;
+        }
+        if(!chosen && !b.path.empty()) for(const auto& copy:b.copies) if(copy.path==b.path) chosen=&copy;
+        if(!chosen) chosen=&b.copies.front();
+        if(b.path!=chosen->path) { b.sha256=chosen->sha256; b.path=chosen->path; }
+        else if(b.sha256.empty()) b.sha256=chosen->sha256;
+        b.size=chosen->size;
+    }
+    std::sort(result.begin(),result.end(),[](const auto& a,const auto& b) { return std::tie(a.book.title,a.book.hash)<std::tie(b.book.title,b.book.hash); });
     return result;
 }
 void State::save_book_files(const std::string& user,const std::map<std::string,BookFiles>& files) {
@@ -251,6 +277,58 @@ void State::register_download(const std::string& user, const std::string& hash, 
         }
         if(own) sql(db_, "COMMIT");
     } catch (...) { if(own) sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); throw; }
+}
+std::vector<LocalCopy> State::local_copies() {
+    std::vector<LocalCopy> result; Query q(db_,"SELECT l.path,l.stamp,l.hash,l.title,l.author,l.position,l.size,i.sha256 FROM local_copies l LEFT JOIN local_integrity i ON i.path=l.path AND i.stamp=l.stamp ORDER BY l.path");
+    while(q.row()) {
+        LocalCopy copy;copy.path=q.text(0);copy.stamp=q.text(1);copy.hash=q.text(2);copy.title=q.text(3);
+        copy.author=q.text(4);copy.position=q.text(5);copy.size=q.number(6);copy.sha256=q.text(7);result.push_back(copy);
+    }
+    return result;
+}
+void State::replace_local_copies(const std::vector<LocalCopy>& copies) {
+    sql(db_,"BEGIN IMMEDIATE");
+    try {
+        sql(db_,"DELETE FROM local_copies");
+        for(const auto& copy:copies) {
+            Query q(db_,"INSERT OR REPLACE INTO local_copies VALUES(?,?,?,?,?,?,?)");
+            q.bind(1,copy.path);q.bind(2,copy.stamp);q.bind(3,copy.hash);q.bind(4,copy.title);
+            q.bind(5,copy.author);q.bind(6,copy.position);q.bind(7,copy.size);q.row();
+        }
+        sql(db_,"COMMIT");
+    } catch(...) {sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
+}
+void State::select_copy(const std::string& user,const std::string& hash,const std::string& path) {
+    bool valid=false;
+    for(const auto& copy:local_copies()) if(copy.hash==hash && copy.path==path && !missing_download(path)) valid=true;
+    if(!valid) throw std::runtime_error("This local copy is no longer available");
+    sql(db_,"BEGIN IMMEDIATE");
+    try {
+        Query q(db_,"INSERT OR REPLACE INTO copy_choices VALUES(?,?,?)"); q.bind(1,user);q.bind(2,hash);q.bind(3,path);q.row();
+        Query reset(db_,"DELETE FROM sync WHERE user=? AND hash=?"); reset.bind(1,user);reset.bind(2,hash);reset.row();
+        sql(db_,"COMMIT");
+    } catch(...) {sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
+}
+void State::remember_integrity(const ManagedBook& book) {
+    for(const auto& copy:book.copies) if(copy.path==book.path) {
+        Query q(db_,"INSERT OR REPLACE INTO local_integrity VALUES(?,?,?)");
+        q.bind(1,copy.path);q.bind(2,copy.stamp);q.bind(3,book.sha256);q.row();return;
+    }
+}
+PendingUpload State::upload(const std::string& user,const std::string& hash) {
+    identity(user,hash); Query q(db_,"SELECT stage,sha256 FROM uploads WHERE user=? AND hash=?");q.bind(1,user);q.bind(2,hash);
+    if(!q.row()) return {};
+    if(q.number(0)<1 || q.number(0)>3) throw std::runtime_error("Invalid saved upload stage");
+    return {static_cast<UploadStage>(q.number(0)),q.text(1)};
+}
+void State::save_upload(const std::string& user,const std::string& hash,const PendingUpload& upload) {
+    identity(user,hash);
+    if(upload.stage==UploadStage::None) {
+        Query q(db_,"DELETE FROM uploads WHERE user=? AND hash=?"); q.bind(1,user);q.bind(2,hash);q.row();
+    } else {
+        Query q(db_,"INSERT OR REPLACE INTO uploads VALUES(?,?,?,?)");q.bind(1,user);q.bind(2,hash);
+        q.bind(3,static_cast<long long>(upload.stage));q.bind(4,upload.sha256);q.row();
+    }
 }
 ScanCache State::scan_cache() {
     ScanCache cache; Query q(db_,"SELECT path,stamp,hash FROM scan_cache");

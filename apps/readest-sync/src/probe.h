@@ -4,6 +4,7 @@
 #include <atomic>
 #include <vector>
 #include <map>
+#include <stdexcept>
 
 namespace readest {
 
@@ -38,6 +39,13 @@ void snapshot_database(const std::string& source, const std::string& destination
 // backup_directory must be a new, app-owned trial directory.
 void apply_readest_trial(const std::string& database, const std::string& backup_directory);
 
+struct NativeBook { std::string path, position; };
+std::vector<NativeBook> native_books(const std::string& snapshot);
+
+class UnsupportedNativePosition : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 struct NativePosition {
     std::string book_path, book_id, profile_id, fast_hash, raw_position, timestamp, cfi;
     // Display page counts from the same snapshot as the CFI, never a location.

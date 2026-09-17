@@ -41,7 +41,7 @@ Window {
         Loader {
             anchors.fill: parent
             sourceComponent: window.view.busy ? busyPage : !window.view.initialized ? errorPage :
-                             !window.view.signedIn ? signInPage : window.view.detail ? detailPage : libraryPage
+                             window.view.signingIn ? signInPage : window.view.detail ? detailPage : libraryPage
         }
     }
     Component { id: busyPage; BusyPage { shell: window } }

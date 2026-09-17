@@ -90,6 +90,16 @@ void check_encryption(xmlNode* n) {
 }
 }
 
+std::string epub_file_stamp(const struct stat& st) {
+#ifdef __APPLE__
+    const auto modified=st.st_mtimespec,changed=st.st_ctimespec;
+#else
+    const auto modified=st.st_mtim,changed=st.st_ctim;
+#endif
+    return std::to_string(st.st_dev)+":"+std::to_string(st.st_ino)+":"+std::to_string(st.st_size)+":"+
+        std::to_string(modified.tv_sec)+":"+std::to_string(modified.tv_nsec)+":"+
+        std::to_string(changed.tv_sec)+":"+std::to_string(changed.tv_nsec);
+}
 std::string epub_fingerprint(const std::string& path) {
     int fd=open(path.c_str(),O_RDONLY|O_NOFOLLOW);
     if(fd<0) throw std::runtime_error("Cannot open EPUB candidate");
@@ -263,6 +273,43 @@ std::vector<unsigned> utf16(const xmlChar* value) {
     }
     return units;
 }
+}
+EpubMetadata epub_metadata(const std::string& path,bool cover) {
+    int fd=open(path.c_str(),O_RDONLY|O_NOFOLLOW);
+    if(fd<0) throw std::runtime_error("Cannot read EPUB metadata");
+    FILE* raw=fdopen(fd,"rb"); if(!raw) {close(fd); throw std::runtime_error("Cannot read EPUB metadata");}
+    std::unique_ptr<FILE,int(*)(FILE*)> file(raw,fclose);
+    struct stat st;
+    if(fstat(fd,&st) || !S_ISREG(st.st_mode) || st.st_size<=0 || st.st_size>256LL*1024*1024)
+        throw std::runtime_error("Unsupported EPUB metadata source");
+    Zip zip(raw,st.st_size);
+    auto container=xml(zip.read("META-INF/container.xml",1024*1024));
+    auto package_path=property(child(child(xmlDocGetRootElement(container.get()),"rootfiles"),"rootfile"),"full-path");
+    if(!safe_path(package_path)) throw std::runtime_error("Invalid EPUB package path");
+    auto package=xml(zip.read(package_path,4*1024*1024));
+    auto* root=xmlDocGetRootElement(package.get());
+    auto* metadata=child(root,"metadata"); EpubMetadata result; std::string cover_id;
+    for(auto* n=metadata->children;n;n=n->next) {
+        if(named(n,"title") || named(n,"creator")) {
+            xmlChar* text=xmlNodeGetContent(n); std::string value=text?reinterpret_cast<char*>(text):""; xmlFree(text);
+            if(value.size()>4096) value.resize(4096);
+            if(named(n,"title") && result.title.empty()) result.title=value;
+            if(named(n,"creator") && result.author.empty()) result.author=value;
+        }
+        if(named(n,"meta") && property(n,"name")=="cover") cover_id=property(n,"content");
+    }
+    if(cover) for(auto* n=child(root,"manifest")->children;n;n=n->next) {
+        if(!named(n,"item")) continue;
+        const auto props=" "+property(n,"properties")+" ";
+        if((!cover_id.empty() && property(n,"id")==cover_id) || props.find(" cover-image ")!=std::string::npos) {
+            const auto type=property(n,"media-type");
+            if(type!="image/jpeg" && type!="image/png") continue;
+            auto slash=package_path.rfind('/');
+            result.cover=zip.read(zip_relative(slash==std::string::npos?"":package_path.substr(0,slash+1),property(n,"href")),2*1024*1024);
+            result.cover_type=type; break;
+        }
+    }
+    return result;
 }
 std::string xpointer_cfi(const std::string& path,const std::string& pointer) {
     if(pointer.size()>8192) throw std::runtime_error("Oversized XPointer");

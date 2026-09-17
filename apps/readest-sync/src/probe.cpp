@@ -285,6 +285,19 @@ std::vector<std::string> path_parameters(const std::string& path) {
     return {path.substr(slash+1),path.substr(0,slash)};
 }
 }
+std::vector<NativeBook> native_books(const std::string& snapshot) {
+    Database db(snapshot); std::vector<NativeBook> result;
+    query_each(db,"SELECT d.name,f.filename,COALESCE(s.position,'') AS position FROM files f "
+        "JOIN folders d ON d.id=f.folder_id AND d.storageid=f.storageid "
+        "LEFT JOIN books_settings s ON s.bookid=f.book_id ORDER BY d.name,f.filename",{},[&](json_object* row) {
+        const auto folder=field(row,"name"),name=field(row,"filename");
+        if(folder.empty() || folder[0]!='/' || folder.find('\0')!=std::string::npos || name.find_first_of("/\\")!=std::string::npos || name.find('\0')!=std::string::npos) return;
+        auto suffix=name.size()>5?name.substr(name.size()-5):std::string();
+        for(auto& c:suffix) if(c>='A' && c<='Z') c+=32;
+        if(suffix==".epub") result.push_back({folder+"/"+name,field(row,"position")});
+    });
+    return result;
+}
 NativePosition native_position(const std::string& snapshot, const std::string& book_path) {
     Database db(snapshot);
     NativePosition result; result.book_path=book_path;
@@ -295,10 +308,10 @@ NativePosition native_position(const std::string& snapshot, const std::string& b
     auto* id=json_object_array_get_idx(ids.get(),0);
     result.book_id=field(id,"book_id"); result.fast_hash=field(id,"hash");
     if(result.fast_hash.size()!=32 || result.fast_hash.find_first_not_of("0123456789ABCDEF")!=std::string::npos)
-        throw std::runtime_error("Unsupported native book fingerprint");
+        throw UnsupportedNativePosition("Unsupported native book fingerprint");
     auto rows=query(db,"SELECT * FROM books_settings WHERE bookid=?",{result.book_id});
     if(json_object_array_length(rows.get())==0) return result;
-    if(json_object_array_length(rows.get())!=1) throw std::runtime_error("Multiple native reading profiles");
+    if(json_object_array_length(rows.get())!=1) throw UnsupportedNativePosition("Multiple native reading profiles");
     auto* row=json_object_array_get_idx(rows.get(),0);
     result.has_settings=true; result.profile_id=field(row,"profileid");
     result.raw_position=field(row,"position"); result.timestamp=field(row,"position_ts");
@@ -311,7 +324,7 @@ NativePosition native_position(const std::string& snapshot, const std::string& b
             result.progress="["+std::to_string(current)+","+std::to_string(total)+"]";
     } catch(const std::exception&) { /* Unknown counts do not block position sync. */ }
     if(result.profile_id.empty() || (!result.raw_position.empty() && result.cfi.empty()))
-        throw std::runtime_error("Unsupported native saved position");
+        throw UnsupportedNativePosition("Unsupported native saved position");
     return result;
 }
 std::map<std::string,double> native_percentages(const std::string& snapshot,

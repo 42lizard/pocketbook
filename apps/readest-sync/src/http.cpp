@@ -6,6 +6,7 @@
 #include <limits>
 #include <cerrno>
 #include <unistd.h>
+#include <sys/stat.h>
 
 namespace readest {
 namespace {
@@ -34,6 +35,16 @@ size_t receive(char* data, size_t size, size_t count, void* user) {
     buffer.bytes += bytes;
     return bytes;
 }
+struct UploadSource { int fd; size_t remaining; };
+size_t send_bytes(char* data,size_t size,size_t count,void* context) {
+    auto& source=*static_cast<UploadSource*>(context);
+    if(size && count>std::numeric_limits<size_t>::max()/size) return CURL_READFUNC_ABORT;
+    const auto cap=std::min(size*count,source.remaining);
+    if(!cap) return 0;
+    ssize_t n; do { n=read(source.fd,data,cap); } while(n<0 && errno==EINTR);
+    if(n<=0) return CURL_READFUNC_ABORT;
+    source.remaining-=n; return static_cast<size_t>(n);
+}
 bool controls(const std::string& value) {
     for (unsigned char c : value) if (c < 32 || c == 127) return true;
     return false;
@@ -43,12 +54,12 @@ bool controls(const std::string& value) {
 static HttpResponse transfer(const std::string& url, const std::string& method,
                            const std::vector<std::string>& headers,
                            const std::string& body, const std::string& ca_bundle,
-                           size_t max_response, int fd, const std::atomic<bool>* cancellation=nullptr) {
+                           size_t max_response, int fd, const std::atomic<bool>* cancellation=nullptr, int upload_fd=-1, size_t upload_size=0) {
     if(cancellation && cancellation->load()) throw std::runtime_error("Cancelled.");
     const auto authority_end = url.find_first_of("/?#", 8);
     if (url.compare(0, 8, "https://") != 0 || controls(url) ||
         url.substr(8, authority_end == std::string::npos ? authority_end : authority_end - 8).find('@') != std::string::npos ||
-        (method != "GET" && method != "POST") || (method == "GET" && !body.empty()) ||
+        (method != "GET" && method != "POST" && !(method=="PUT" && upload_fd>=0)) || (method == "GET" && !body.empty()) ||
         ca_bundle.empty() || controls(ca_bundle) || max_response == 0 ||
         max_response > (fd < 0 ? 16UL * 1024 * 1024 : 1024UL * 1024 * 1024))
         throw std::runtime_error("Invalid HTTPS request");
@@ -68,6 +79,7 @@ static HttpResponse transfer(const std::string& url, const std::string& method,
         if (!next) throw std::runtime_error("Cannot allocate HTTP headers");
         list.release(); list.reset(next);
     }
+    UploadSource source{upload_fd,upload_size};
     Buffer buffer; buffer.limit = max_response; buffer.fd = fd;
 #define SET(option, value) do { if (curl_easy_setopt(curl.get(), option, value) != CURLE_OK) \
     throw std::runtime_error("Unsupported HTTPS option"); } while (0)
@@ -78,7 +90,7 @@ static HttpResponse transfer(const std::string& url, const std::string& method,
     SET(CURLOPT_XFERINFOFUNCTION, progress);
     SET(CURLOPT_XFERINFODATA, cancellation);
     SET(CURLOPT_CONNECTTIMEOUT, 15L);
-    SET(CURLOPT_TIMEOUT, fd < 0 ? 60L : 1800L);
+    SET(CURLOPT_TIMEOUT, fd < 0 && upload_fd<0 ? 60L : 1800L);
     SET(CURLOPT_LOW_SPEED_LIMIT, 16L);
     SET(CURLOPT_LOW_SPEED_TIME, 60L);
     SET(CURLOPT_SSL_VERIFYPEER, 1L);
@@ -97,6 +109,12 @@ static HttpResponse transfer(const std::string& url, const std::string& method,
         SET(CURLOPT_POST, 1L);
         SET(CURLOPT_POSTFIELDS, body.c_str());
         SET(CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
+    }
+    if(upload_fd>=0) {
+        SET(CURLOPT_UPLOAD,1L);
+        SET(CURLOPT_READFUNCTION,send_bytes);
+        SET(CURLOPT_READDATA,&source);
+        SET(CURLOPT_INFILESIZE_LARGE,static_cast<curl_off_t>(upload_size));
     }
 #undef SET
     const auto result = curl_easy_perform(curl.get());
@@ -139,6 +157,12 @@ HttpTransport https_transport() {
     transport.download=[](const std::string& url,int fd,const std::string& ca,size_t cap,const std::atomic<bool>& cancel) {
         if(fd<0) throw std::runtime_error("Invalid download file");
         return transfer(url,"GET",{},"",ca,cap,fd,&cancel);
+    };
+    transport.upload=[](const std::string& url,int fd,const std::string& ca,size_t size,const std::atomic<bool>& cancel) {
+        struct stat st;
+        if(fd<0 || fstat(fd,&st) || !S_ISREG(st.st_mode) || size==0 || size>256UL*1024*1024 || st.st_size!=static_cast<off_t>(size) || lseek(fd,0,SEEK_SET)<0)
+            throw std::runtime_error("Invalid upload file");
+        return transfer(url,"PUT",{"Content-Type: application/octet-stream"},"",ca,65536,-1,&cancel,fd,size);
     };
     return transport;
 }

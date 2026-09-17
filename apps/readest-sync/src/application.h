@@ -22,23 +22,24 @@ struct LibraryEntry {
     Availability availability=Availability::Unknown;
     double local_percentage=-1, remote_percentage=-1;
     std::string cover;
+    bool upload_pending=false;
 };
 struct LibrarySnapshot {
     bool initialized=false, signed_in=false;
     std::string account;
     std::vector<LibraryEntry> books;
 };
-enum class Command { Initialize, SignIn, SignOut, Refresh, Scan, Download, Sync, Open, ReadOffline, Resume, Covers };
+enum class Command { Initialize, SignIn, SignOut, Refresh, Scan, Download, Sync, Open, ReadOffline, Resume, Covers, Upload, SelectCopy };
 struct Request {
     Command command=Command::Initialize;
     BookId book;
     std::vector<BookId> books;
-    std::string email, password;
+    std::string email, password, local_path;
     ProgressChoice choice=ProgressChoice::Automatic;
     long long revision=0;
 };
 enum class Outcome { Ready, SessionInvalid, SignedIn, SignedOut, Refreshed, Scanned, Downloaded, Reused,
-    Synced, LocalOpen, SyncUnavailable, NeedsNativeSettings, Applied, AppliedUnrecorded, NativeCommitUncertain, Failed, Cancelled };
+    Uploaded, UploadPending, CopySelected, Synced, LocalOpen, SyncUnavailable, NeedsNativeSettings, Applied, AppliedUnrecorded, NativeCommitUncertain, Failed, Cancelled };
 struct OperationResult {
     LibrarySnapshot library;
     std::vector<std::pair<BookId,std::string>> cover_updates;

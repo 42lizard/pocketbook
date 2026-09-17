@@ -408,3 +408,32 @@ docker compose run --rm qt6 python3 tools/check_qt6_firmware.py \
 Before accepting the migration on InkPad, test launch, native keyboard sign-in,
 refresh, all library pages (especially 8/9), Wi-Fi recovery, an EPUB download,
 Read offline, native-reader return, and both progress conflict choices.
+
+## PocketBook library and uploads
+
+EPUBs indexed by PocketBook appear alongside your Readest books, including when
+signed out. **On device** includes both linked and device-only books;
+**PocketBook only** shows books absent from the connected Readest library.
+**Scan device** updates this inventory without connecting to Wi-Fi. Unindexed
+files are not included. Unchanged EPUB fingerprints and metadata are cached;
+full archive validation happens when opening or transferring a book.
+
+Select a device-only book and choose **Upload to Readest** to upload its EPUB
+and current PocketBook reading position. Sign in first if necessary. Uploading
+leaves the original file in place. Embedded title, author, and cover are used
+when available; missing metadata falls back to the filename, and a missing cover
+never blocks uploading. Unread books have no position to transfer; unsupported
+saved positions produce a warning while allowing the book upload.
+
+Matching uses Readest's EPUB fingerprint, not title or author. Different editions
+remain separate. When local copies have differing positions, choose the copy by
+path and percentage; the app remembers it for opening and synchronization.
+If a matching Readest book already exists, its position goes through the normal
+conflict resolution instead of being overwritten automatically.
+
+Interrupted uploads retain their completed stages across restarts and require
+**Retry upload**. If only progress failed, the EPUB is not sent again. Retries
+check the remote state and use the latest local position. Pending work belongs
+to the account that started it. Removing a local file changes its device
+availability, but does not delete its Readest entry. There are no automatic or
+bulk uploads and no synchronized deletion.

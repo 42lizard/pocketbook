@@ -51,19 +51,21 @@ int main(int argc,char** argv) {
     // A late copy is reused by Download itself; no storage request or copy occurs.
     const auto local=base+"/My existing book.epub";
     { std::ifstream input(argv[2],std::ios::binary); std::ofstream output(local,std::ios::binary); output<<input.rdbuf(); }
+    // Native indexed copy is reusable without a download; no saved position yet.
+    sqlite3* native=nullptr;
+    assert(sqlite3_open(config.database.c_str(),&native)==SQLITE_OK);
+    assert(sqlite3_exec(native,"CREATE TABLE files(book_id,folder_id,storageid,filename,fast_hash);"
+        "CREATE TABLE folders(id,storageid,name);"
+        "CREATE TABLE books_settings(bookid,profileid,position,position_ts,cpage,npage);",nullptr,nullptr,nullptr)==SQLITE_OK);
+    const auto indexed="INSERT INTO folders VALUES(1,1,'"+base+"');INSERT INTO files VALUES(1,1,1,'My existing book.epub',X'00112233445566778899AABBCCDDEEFF');";
+    assert(sqlite3_exec(native,indexed.c_str(),nullptr,nullptr,nullptr)==SQLITE_OK);
+    assert(sqlite3_close(native)==SQLITE_OK);
     request={}; request.command=Command::Download; request.book={"fixture-user",book.hash};
     result=service.execute(request,cancel);
     assert(result.outcome==Outcome::Reused && requests==1);
     assert(result.library.books[0].book.path==local && result.library.books[0].availability==Availability::OnDevice);
     request.command=Command::ReadOffline; result=service.execute(request,cancel);
     assert(result.outcome==Outcome::LocalOpen && result.open_path==local && requests==1);
-    // Provide an empty native library: the valid EPUB has no saved position yet.
-    sqlite3* native=nullptr;
-    assert(sqlite3_open(config.database.c_str(),&native)==SQLITE_OK);
-    assert(sqlite3_exec(native,"CREATE TABLE files(book_id,folder_id,storageid,filename,fast_hash);"
-        "CREATE TABLE folders(id,storageid,name);"
-        "CREATE TABLE books_settings(bookid,profileid,position,position_ts,cpage,npage);",nullptr,nullptr,nullptr)==SQLITE_OK);
-    assert(sqlite3_close(native)==SQLITE_OK);
     for(const auto command:{Command::Sync,Command::Open,Command::ReadOffline}) {
         request.command=command; full_inspections=0;
         result=service.execute(request,cancel);
@@ -116,7 +118,7 @@ int main(int argc,char** argv) {
     cancel=true; result=service.execute(request,cancel); cancel=false;
     assert(result.outcome==Outcome::Cancelled && result.cover_attempts.empty());
     request.command=Command::SignOut; result=service.execute(request,cancel);
-    assert(result.outcome==Outcome::SignedOut && !result.library.signed_in && result.library.books.empty());
+    assert(result.outcome==Outcome::SignedOut && !result.library.signed_in && result.library.books.size()==1);
     assert(access(local.c_str(),F_OK)==0 && requests==before_refresh+5);
     config.transport.download={};
     bool incomplete_rejected=false;

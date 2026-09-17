@@ -12,6 +12,7 @@ class AppController : public QObject {
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool initialized READ initialized NOTIFY changed)
     Q_PROPERTY(bool signedIn READ signedIn NOTIFY changed)
+    Q_PROPERTY(bool signingIn READ signingIn NOTIFY changed)
     Q_PROPERTY(bool detail READ detail NOTIFY changed)
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
@@ -25,6 +26,7 @@ public:
     bool busy() const { return (runner_.busy() && !covers_.active()) || bool(pending_request_); }
     bool initialized() const { return initialized_; }
     bool signedIn() const { return signed_in_; }
+    bool signingIn() const { return signing_in_; }
     bool detail() const { return !selected_.hash.empty(); }
     QString title() const;
     QString status() const { return busy()?(exiting_?"Stopping…":busy_message_+"…"):status_; }
@@ -34,6 +36,7 @@ public:
     Q_INVOKABLE void initialize();
     Q_INVOKABLE void signIn(const QString& email,const QString& password);
     Q_INVOKABLE void signOut();
+    Q_INVOKABLE void showSignIn();
     Q_INVOKABLE void refreshLibrary();
     Q_INVOKABLE void scanDevice();
     Q_INVOKABLE void selectBook(const QString& account,const QString& hash);
@@ -54,10 +57,10 @@ private:
     OperationRunner runner_; // Destroy/join the runner before the service.
     VisibleCoverLoader covers_; // Invalidates callbacks before runner destruction.
     readest::BookId selected_;
-    enum class ChoiceState { None, SyncConflict, OpenConflict };
+    enum class ChoiceState { None, SyncConflict, OpenConflict, LocalCopy };
     ChoiceState choice_=ChoiceState::None;
     long long revision_=0;
-    bool initialized_=false,signed_in_=false,exiting_=false,reader_opened_=false;
+    bool signing_in_=false,initialized_=false,signed_in_=false,exiting_=false,reader_opened_=false;
     QString status_="Starting…",busy_message_;
     std::unique_ptr<readest::Request> pending_request_;
     void submit(readest::Request request);

@@ -149,6 +149,22 @@ int main() {
     auto remote=restarted->transport().request("https://web.readest.com/api/sync?type=configs&book="+hash.toStdString(),
         "GET",{},"","",1000000,cancel);
     assert(remote.body.find("/6/4!")!=std::string::npos);
+    // A device-only fixture goes through the real application upload boundary.
+    const auto local=appRoot+"/PocketBook-only.epub";
+    assert(QFile::copy(QStringLiteral(READEST_SIM_FIXTURES)+"/51.epub",local));
+    const auto localHash=inspect_epub(local.toStdString()).readest_hash;
+    sql("INSERT INTO folders VALUES(2,1,'"+appRoot.toStdString()+"');"
+        "INSERT INTO files VALUES(2,2,1,'PocketBook-only.epub',zeroblob(16));"
+        "INSERT INTO books_settings VALUES(2,1,'pbr:/webkit?##epubcfi(/6/4!/4/2)',1,2,3,0);");
+    command={};command.command=Command::Scan;result=application.execute(command,cancel);
+    assert(result.library.books.size()==52);
+    command.book={"simulator-user",localHash};command.command=Command::Upload;
+    result=application.execute(command,cancel);
+    if(result.outcome!=Outcome::Uploaded) std::cerr<<result.error<<" "<<result.progress_warning<<"\n";
+    assert(result.outcome==Outcome::Uploaded);
+    auto persisted=std::make_shared<MockCloud>(root.path()+"/one",READEST_SIM_FIXTURES);
+    const auto uploaded=persisted->transport().request("https://web.readest.com/api/sync?type=books&book="+localHash,"GET",{},"","",1000000,cancel);
+    assert(uploaded.body.find(localHash)!=std::string::npos);
     assert(sqlite3_close(db)==SQLITE_OK);
     std::cout<<"Independent headless mock cloud state and fault controls passed.\n";
 }

@@ -1,4 +1,5 @@
 #include "application.h"
+#include "upload.h"
 #include <stdexcept>
 #include <ctime>
 #include <unistd.h>
@@ -6,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <cstdio>
+#include <set>
 
 namespace readest {
 ApplicationService::ApplicationService(ApplicationConfig config):config_(std::move(config)) {
@@ -37,14 +39,44 @@ void ApplicationService::check_cancel(const std::atomic<bool>& cancel) const {
 }
 size_t ApplicationService::scan(const std::atomic<bool>& cancel) {
     trace("scan.begin");
-    const auto matches=discover_device_books(*state_,cloud_->session().user_id,config_.book_roots,config_.books_root,
-        [&cancel] { return cancel.load(); });
+    const auto file=config_.root+"/inventory-"+std::to_string(getpid())+"-"+std::to_string(++sequence_)+".db";
+    std::vector<LocalCopy> copies;
+    try {
+        backup_native_database(config_.database,file);
+        std::map<std::string,LocalCopy> cached;
+        for(const auto& copy:state_->local_copies()) cached[copy.path]=copy;
+        std::set<std::string> seen;
+        for(const auto& native:native_books(file)) {
+            check_cancel(cancel);
+            if(!seen.insert(native.path).second) continue;
+            struct stat st;
+            if(lstat(native.path.c_str(),&st) || !S_ISREG(st.st_mode) || st.st_size<=0 || st.st_size>256LL*1024*1024) continue;
+            const auto stamp=epub_file_stamp(st);
+            LocalCopy copy;
+            const auto found=cached.find(native.path);
+            if(found!=cached.end() && found->second.stamp==stamp) copy=found->second;
+            else {
+                copy.path=native.path;copy.stamp=stamp;copy.size=st.st_size;
+                try { copy.hash=epub_fingerprint(copy.path); }
+                catch(const std::exception&) { continue; }
+                copy.title=copy.path.substr(copy.path.rfind('/')+1);
+                try { const auto metadata=epub_metadata(copy.path); if(!metadata.title.empty()) copy.title=metadata.title; copy.author=metadata.author; }
+                catch(const std::exception&) { /* Filename is a usable metadata fallback. */ }
+            }
+            copy.position=native.position;copies.push_back(std::move(copy));
+        }
+        check_cancel(cancel); state_->replace_local_copies(copies); unlink(file.c_str());
+    } catch(...) { unlink(file.c_str()); throw; }
+    const auto matches=copies.size();
     trace("scan.end"); return matches;
 }
 ManagedBook ApplicationService::resolve(const BookId& id) {
-    if(!cloud_ || !cloud_->session().signed_in() || id.account!=cloud_->session().user_id)
+    if(!cloud_ || id.account!=cloud_->session().user_id)
         throw std::runtime_error("This book belongs to a different signed-in account.");
-    for(const auto& book:state_->books(id.account)) if(book.book.hash==id.hash) return book;
+    for(const auto& book:state_->books(id.account)) if(book.book.hash==id.hash) {
+        if(book.needs_copy_choice) throw std::runtime_error("Choose a local copy before opening or synchronizing this book.");
+        return book;
+    }
     throw std::runtime_error("This book is no longer in the library.");
 }
 NativePosition ApplicationService::capture(const std::string& path) {
@@ -57,20 +89,22 @@ NativePosition ApplicationService::capture(const std::string& path) {
 LibrarySnapshot ApplicationService::snapshot() {
     trace("snapshot.begin");
     LibrarySnapshot result; result.initialized=bool(state_ && cloud_);
+    if(!result.initialized) return result;
     result.signed_in=cloud_ && cloud_->session().signed_in();
-    if(!result.signed_in) return result;
     result.account=cloud_->session().user_id;
     const auto syncs=state_->syncs(result.account);
     std::vector<std::string> paths;
     for(const auto& book:state_->books(result.account)) {
         LibraryEntry entry; entry.id={result.account,book.book.hash}; entry.book=book;
         entry.availability=book_availability(book);
+        entry.upload_pending=result.signed_in && state_->upload(result.account,book.book.hash).stage!=UploadStage::None;
         const auto saved=syncs.find(book.book.hash); if(saved!=syncs.end()) entry.sync=saved->second;
         entry.remote_percentage=reading_percentage(book.book.raw,entry.sync.remote_config);
         const auto image=cover_path(config_.root,result.account,book.book.hash,book.files);
         if(valid_cover(image)) entry.cover=image;
         else if(valid_cover(image+".local.png")) entry.cover=image+".local.png";
         if(!book.path.empty()) paths.push_back(book.path);
+        for(const auto& copy:book.copies) paths.push_back(copy.path);
         result.books.push_back(std::move(entry));
     }
     if(!paths.empty()) {
@@ -81,6 +115,9 @@ LibrarySnapshot ApplicationService::snapshot() {
             for(auto& entry:result.books) {
                 const auto found=percentages.find(entry.book.path);
                 if(found!=percentages.end()) entry.local_percentage=found->second;
+                for(auto& copy:entry.book.copies) {
+                    const auto value=percentages.find(copy.path);if(value!=percentages.end()) copy.percentage=value->second;
+                }
             }
         } catch(const std::exception&) { /* Missing native counts display as unknown. */ }
         unlink(file.c_str());
@@ -90,6 +127,8 @@ LibrarySnapshot ApplicationService::snapshot() {
 void ApplicationService::synchronize(const Request& request, OperationResult& result, const std::atomic<bool>& cancel) {
     const VerifiedManagedBook verified(resolve(request.book));
     const auto& book=verified.book();
+    if(book.local_only) throw std::runtime_error("Upload this book to Readest before synchronizing.");
+    state_->remember_integrity(book);
     const auto native=capture(book.path);
     const bool open=request.command==Command::Open;
     const auto audit=config_.root+"/native-"+std::to_string(time(nullptr))+"-"+std::to_string(getpid())+"-"+std::to_string(++sequence_);
@@ -98,6 +137,11 @@ void ApplicationService::synchronize(const Request& request, OperationResult& re
     result.sync_action=transition.action; result.revision=transition.revision;
     result.position_order=transition.position_order; result.error=transition.error; result.progress_warning=transition.warning;
     result.outcome=Outcome::Synced;
+    if(transition.outcome!=ResumeOutcome::SyncUnavailable &&
+       (result.sync_action==SyncAction::None || result.sync_action==SyncAction::Upload || result.sync_action==SyncAction::EstablishBaseline ||
+        transition.outcome==ResumeOutcome::Applied ||
+        (request.choice==ProgressChoice::Readest && result.sync_action==SyncAction::ApplyRemote)))
+        state_->save_upload(request.book.account,request.book.hash,{});
     switch(transition.outcome) {
     case ResumeOutcome::NotRequested: case ResumeOutcome::Blocked: return;
     case ResumeOutcome::NoPending: break;
@@ -134,8 +178,9 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
             if(cloud_->session().signed_in()) {
                 const auto warnings=recover_downloads(*state_,cloud_->session().user_id,config_.books_root);
                 if(!warnings.empty()) result.recovery_warning=warnings.front();
-                // Startup serves cached metadata; discovery is explicit or part of Refresh.
+                // Cloud metadata remains cached at startup.
             }
+            try { scan(cancel); } catch(const std::exception& e) { check_cancel(cancel); result.recovery_warning=e.what(); }
         } else {
             if(!cloud_ || !state_) throw std::runtime_error("Initialize the app first.");
             if(request.command==Command::SignIn) {
@@ -146,7 +191,8 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
             } else if(request.command==Command::SignOut) {
                 cloud_->sign_out(); result.outcome=Outcome::SignedOut;
             } else {
-                if(!cloud_->session().signed_in()) throw std::runtime_error("Sign in first.");
+                if(!cloud_->session().signed_in() && request.command!=Command::Scan && request.command!=Command::ReadOffline && request.command!=Command::Resume && request.command!=Command::SelectCopy)
+                    throw std::runtime_error("Sign in first.");
                 switch(request.command) {
                 case Command::Refresh: {
                     trace("refresh.begin");
@@ -170,15 +216,37 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                 case Command::Scan: result.matched=scan(cancel); result.outcome=Outcome::Scanned; break;
                 case Command::Download: {
                     resolve(request.book); scan(cancel);
+                    // Preserve the existing last-chance reuse check for a requested
+                    // cloud download. Native-only inventory never invokes this crawler.
+                    if(resolve(request.book).path.empty())
+                        discover_device_books(*state_,request.book.account,config_.book_roots,config_.books_root,[&cancel] {return cancel.load();});
                     const auto book=resolve(request.book);
                     if(!book.path.empty()) { (void)VerifiedManagedBook(book); result.outcome=Outcome::Reused; break; }
                     const auto stored=download_book(*cloud_,book.book,config_.books_root,config_.ca,time(nullptr),config_.transport.bind_download(cancel));
                     state_->register_download(request.book.account,request.book.hash,stored);
                     result.outcome=Outcome::Downloaded; break;
                 }
+                case Command::Upload: {
+                    const VerifiedManagedBook verified(resolve(request.book));
+                    state_->remember_integrity(verified.book());
+                    UploadPosition position;
+                    try {position.native=capture(verified.book().path);}
+                    catch(const UnsupportedNativePosition& e) {position.error=e.what();position.unsupported=true;}
+                    catch(const std::exception& e) {position.error=e.what();}
+                    const auto uploaded=upload_book(*cloud_,*state_,verified,position,config_.transport,config_.ca,config_.root,cancel);
+                    result.sync_action=uploaded.action;result.progress_warning=uploaded.warning;
+                    result.revision=state_->sync(request.book.account,request.book.hash).revision;
+                    result.outcome=uploaded.pending?Outcome::UploadPending:Outcome::Uploaded;break;
+                }
+                case Command::SelectCopy: {
+                    if(request.book.account!=cloud_->session().user_id) throw std::runtime_error("Account changed; select the book again");
+                    state_->select_copy(request.book.account,request.book.hash,request.local_path);
+                    result.outcome=Outcome::CopySelected;break;
+                }
                 case Command::Sync: case Command::Open: synchronize(request,result,cancel); break;
                 case Command::ReadOffline: {
-                    const auto book=resolve(request.book); (void)VerifiedManagedBook(book); check_cancel(cancel);
+                    const VerifiedManagedBook verified(resolve(request.book)); const auto& book=verified.book();
+                    state_->remember_integrity(book); check_cancel(cancel);
                     result.open_path=book.path; result.outcome=Outcome::LocalOpen; break;
                 }
                 case Command::Covers: {
@@ -199,7 +267,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                     }
                     break;
                 }
-                case Command::Resume: break;
+                case Command::Resume: scan(cancel); break;
                 default: break;
                 }
             }

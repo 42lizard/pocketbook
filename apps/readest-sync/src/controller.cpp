@@ -27,6 +27,9 @@ QString baseResultMessage(const OperationResult& result) {
     case Outcome::Scanned: return QString("Device scan complete. Matched %1 existing EPUBs.").arg(result.matched);
     case Outcome::Downloaded: return "Downloaded and verified. Choose Open to read.";
     case Outcome::Reused: return "Found a matching EPUB on device. Choose Open to read.";
+    case Outcome::Uploaded: return "Book available in Readest.";
+    case Outcome::UploadPending: return "Book uploaded; reading position pending. Retry or resolve the differing positions.";
+    case Outcome::CopySelected: return "Local copy selected.";
     case Outcome::Synced: {
         auto text=syncMessage(result.sync_action);
         if(result.position_order) text+=result.position_order>0?" Readest is earlier; PocketBook is farther ahead.":" PocketBook is earlier; Readest is farther ahead.";
@@ -57,6 +60,8 @@ QString operationMessage(Command command) {
     case Command::Open: return "Opening book";
     case Command::ReadOffline: return "Opening PocketBook position";
     case Command::Resume: return "Updating PocketBook progress";
+    case Command::Upload: return "Uploading book and reading position";
+    case Command::SelectCopy: return "Selecting local copy";
     case Command::Covers: return "Loading covers";
     }
     return {};
@@ -89,7 +94,7 @@ QString AppController::title() const {
 }
 QString AppController::hint() const {
     const auto* entry=library_.find(selected_); if(!entry) return {};
-    auto text=availabilityLabel(entry->availability)+". "+QString::fromStdString(entry->book.book.author);
+    auto text=(entry->book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry->availability))+". "+QString::fromStdString(entry->book.book.author);
     if(entry->availability==Availability::ProgressOnly) text+="\nOnly position data is available. Upload the EPUB in Readest, then check again.";
     text+="\nPocketBook: "+percentageLabel(entry->local_percentage)+" · Readest: "+percentageLabel(entry->remote_percentage);
     return text+"\nPercentages use each reader’s page counts. — means unavailable.";
@@ -99,6 +104,23 @@ QVariantList AppController::actions() const {
     if(busy()) return result;
     auto add=[&](const char* command,const QString& text) { result.append(QVariantMap{{"command",command},{"text",text}}); };
     const auto* entry=library_.find(selected_); if(!entry) return result;
+    if(entry->book.needs_copy_choice || choice_==ChoiceState::LocalCopy) {
+        for(size_t i=0;i<entry->book.copies.size();++i) {
+            const auto& copy=entry->book.copies[i];
+            const auto command="copy:"+std::to_string(i);
+            add(command.c_str(),QString::fromStdString(copy.path)+" · "+percentageLabel(copy.percentage));
+        }
+        add("back","Back to library");return result;
+    }
+    if(entry->book.local_only || !signed_in_) {
+        add("offline","Open at PocketBook position");
+        if(signed_in_) add("upload",entry->upload_pending?"Retry upload":"Upload to Readest");
+        else add("signin","Sign in to upload");
+        if(entry->book.copies.size()>1) add("copies","Choose local copy");
+        add("back","Back to library");return result;
+    }
+    if(entry->upload_pending) add("upload","Retry upload / reading position");
+    if(entry->book.copies.size()>1) add("copies","Choose local copy");
     if(choice_==ChoiceState::OpenConflict && entry->availability==Availability::OnDevice) {
         add("openPocketBook","Open at PocketBook position"); add("openReadest","Open at Readest position");
     } else if(entry->availability==Availability::OnDevice) {
@@ -118,7 +140,7 @@ void AppController::submit(Request request) {
     }
     covers_.show({});
     const bool online=request.command==Command::SignIn || request.command==Command::Refresh || request.command==Command::Download ||
-        request.command==Command::Sync || request.command==Command::Open;
+        request.command==Command::Sync || request.command==Command::Open || request.command==Command::Upload;
     const auto message=operationMessage(request.command);
     // The completion captures no credentials. Service work cannot mutate presentation state.
     Request context; context.command=request.command; context.book=request.book; context.choice=request.choice;
@@ -136,11 +158,12 @@ void AppController::complete(const Request& request,OperationResult result) {
     if(request.command==Command::Refresh && result.outcome==Outcome::Refreshed) covers_.refreshed();
     if(result.library.initialized) {
         initialized_=true; signed_in_=result.library.signed_in;
+        if(signed_in_) signing_in_=false;
         library_.replace(std::move(result.library.books));
         if(!library_.find(selected_)) selected_={};
     }
     status_=resultMessage(result);
-    if(request.command==Command::Sync || request.command==Command::Open) {
+    if(request.command==Command::Sync || request.command==Command::Open || request.command==Command::Upload) {
         revision_=result.revision;
         choice_=result.sync_action==SyncAction::Conflict?
             (request.command==Command::Open?ChoiceState::OpenConflict:ChoiceState::SyncConflict):
@@ -156,7 +179,7 @@ void AppController::complete(const Request& request,OperationResult result) {
 }
 void AppController::prepareCovers() {
     std::vector<LibraryEntry> visible;
-    if(signed_in_ && !busy() && !detail())
+    if(!busy() && !detail() && !signing_in_)
         for(int row=0;row<library_.rowCount();++row) visible.push_back(library_.at(row));
     covers_.show(std::move(visible));
 }
@@ -167,11 +190,12 @@ void AppController::signIn(const QString& email,const QString& password) {
     if(email.trimmed().toUtf8().size()>=256 || password.toUtf8().size()>=1024) { status_="Email or password is too long."; emit changed(); return; }
     Request request; request.command=Command::SignIn; request.email=email.trimmed().toStdString(); request.password=password.toStdString(); submit(std::move(request));
 }
+void AppController::showSignIn() { if(!busy() && !signed_in_) { signing_in_=true;emit changed();prepareCovers(); } }
 void AppController::signOut() { if(!signed_in_) return; covers_.resetSession(""); Request r; r.command=Command::SignOut; submit(r); }
-void AppController::refreshLibrary() { if(!signed_in_) return; Request r; r.command=Command::Refresh; submit(r); }
-void AppController::scanDevice() { if(!signed_in_) return; Request r; r.command=Command::Scan; submit(r); }
+void AppController::refreshLibrary() { if(!signed_in_) { scanDevice(); return; } Request r; r.command=Command::Refresh; submit(r); }
+void AppController::scanDevice() { Request r; r.command=Command::Scan; submit(r); }
 void AppController::selectBook(const QString& account,const QString& hash) {
-    if(busy() || !signed_in_) return;
+    if(busy()) return;
     const BookId id{account.toStdString(),hash.toStdString()};
     const auto* entry=library_.find(id); if(!entry) return;
     selected_=id; revision_=entry->sync.revision; choice_=ChoiceState::None;
@@ -184,8 +208,14 @@ void AppController::runAction(const QString& command) {
     if(!allowed) return;
     if(command=="back") { back(); return; }
     if(command=="refresh") { refreshLibrary(); return; }
+    if(command=="signin") {showSignIn();return;}
+    if(command=="copies") {choice_=ChoiceState::LocalCopy;emit changed();return;}
     Request request; request.book=selected_; request.revision=revision_;
-    if(command=="download") request.command=Command::Download;
+    if(command.startsWith("copy:")) {
+        const auto* entry=library_.find(selected_);
+        request.command=Command::SelectCopy;request.local_path=entry->book.copies.at(command.mid(5).toUInt()).path;
+    } else if(command=="upload") request.command=Command::Upload;
+    else if(command=="download") request.command=Command::Download;
     else if(command=="offline" || command=="openPocketBook") request.command=Command::ReadOffline;
     else if(command=="open" || command=="openReadest") request.command=Command::Open;
     else request.command=Command::Sync;
@@ -199,12 +229,13 @@ void AppController::setPageCapacity(int value) { library_.setCapacity(value); }
 void AppController::turnPage(int direction) { if(!busy() && !detail()) library_.turnPage(direction); }
 void AppController::back() {
     if(busy()) close();
+    else if(signing_in_) {signing_in_=false;emit changed();prepareCovers();}
     else if(detail()) { selected_={}; choice_=ChoiceState::None; emit changed(); prepareCovers(); }
     else close();
 }
 void AppController::close() { if(busy()) { exiting_=true; runner_.cancel(); emit changed(); } else QCoreApplication::quit(); }
 void AppController::resume() {
-    if(!busy() && initialized_ && signed_in_ && reader_opened_) {
+    if(!busy() && initialized_ && reader_opened_) {
         reader_opened_=false; Request r; r.command=Command::Resume; submit(r);
     }
 }

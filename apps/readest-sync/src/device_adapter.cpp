@@ -44,7 +44,16 @@ DeviceAccess deviceAccess() {
         if(readest::valid_cover(name)) return QString::fromStdString(name);
         // Called as deferred device work, never from model data() or QML rendering.
         const auto image=platform::localCover(QString::fromStdString(entry.book.path),QSize(400,600));
-        if(image.isNull()) return {};
+        if(image.isNull()) {
+            try {
+                const auto metadata=readest::epub_metadata(entry.book.path,true);
+                if(metadata.cover.empty()) return {};
+                QSaveFile output(QString::fromStdString(name));
+                if(output.open(QIODevice::WriteOnly) && output.write(metadata.cover.data(),metadata.cover.size())==static_cast<qint64>(metadata.cover.size()) && output.commit() && readest::valid_cover(name))
+                    return QString::fromStdString(name);
+            } catch(const std::exception&) { /* Missing or unsupported cover is nonfatal. */ }
+            return {};
+        }
         QSaveFile output(QString::fromStdString(name));
         if(output.open(QIODevice::WriteOnly) && image.save(&output,"PNG") && output.commit()) return QString::fromStdString(name);
         return {};

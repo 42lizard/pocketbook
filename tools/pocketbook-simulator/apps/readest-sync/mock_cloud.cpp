@@ -42,10 +42,13 @@ void pause(int milliseconds,const std::atomic<bool>& cancellation) {
 }
 void MockCloud::saveRemote() {
     writeFile(root+"/remote.json",QJsonDocument(configs).toJson());
+    writeFile(root+"/library.json",QJsonDocument(books).toJson());
+    writeFile(root+"/files.json",QJsonDocument(files).toJson());
     // Keep the library's display metadata consistent with saved remote configs.
     for(int i=0;i<books.size();++i) {
         auto book=books[i].toObject();
         const auto row=configs[book["book_hash"].toString()].toObject();
+        if(row.isEmpty()) continue;
         book["progress"]=QJsonDocument::fromJson(row["progress"].toString().toUtf8()).array();
         book["updated_at"]=row["updated_at"];
         book["synced_at"]=qMax(book["synced_at"].toInteger(),row["updated_at"].toInteger());
@@ -77,12 +80,26 @@ MockCloud::MockCloud(QString storage,const QString& fixtures):root(std::move(sto
             add("cover.png",readFile(fixtures+QString("/%1.png").arg(i,2,10,QChar('0'))));
         }
     }
+    if(QFile::exists(root+"/library.json")) {
+        const auto saved=QJsonDocument::fromJson(readFile(root+"/library.json")).array();
+        for(const auto& row:saved) {
+            bool exists=false;for(const auto& book:books) if(book.toObject()["book_hash"]==row.toObject()["book_hash"]) exists=true;
+            if(!exists) books.append(row);
+        }
+    }
+    if(QFile::exists(root+"/files.json")) {
+        const auto saved=QJsonDocument::fromJson(readFile(root+"/files.json")).array();
+        for(const auto& row:saved) {
+            bool exists=false;for(const auto& file:files) if(file.toObject()["file_key"]==row.toObject()["file_key"]) exists=true;
+            if(!exists) files.append(row);
+        }
+    }
     if(QFile::exists(root+"/remote.json")) {
         QJsonParseError error;
         const auto saved=QJsonDocument::fromJson(readFile(root+"/remote.json"),&error);
         if(error.error!=QJsonParseError::NoError || !saved.isObject()) throw std::runtime_error("Invalid simulator remote state");
         const auto rows=saved.object();
-        for(auto it=rows.begin();it!=rows.end();++it) if(configs.contains(it.key())) configs[it.key()]=it.value();
+        for(auto it=rows.begin();it!=rows.end();++it) configs[it.key()]=it.value();
     }
     saveRemote();
 }
@@ -102,7 +119,8 @@ HttpResponse MockCloud::request(const std::string& address,const std::string& me
     } else if(url.path()=="/api/sync" && method=="GET") {
         if(query.queryItemValue("type")=="books") {
             QJsonArray delta;
-            for(const auto& book:books) if(book.toObject()["synced_at"].toInteger()>query.queryItemValue("since").toLongLong()) delta.append(book);
+            for(const auto& book:books) if(book.toObject()["synced_at"].toInteger()>query.queryItemValue("since").toLongLong() &&
+                (query.queryItemValue("book").isEmpty() || book.toObject()["book_hash"]==query.queryItemValue("book"))) delta.append(book);
             result={{"books",delta}};
         } else if(query.queryItemValue("type")=="configs") {
             const auto row=configs.value(query.queryItemValue("book"));
@@ -110,11 +128,17 @@ HttpResponse MockCloud::request(const std::string& address,const std::string& me
         } else throw std::runtime_error("Unknown simulator sync request");
     } else if(url.path()=="/api/sync" && method=="POST") {
         const auto payload=QJsonDocument::fromJson(QByteArray::fromStdString(body)).object();
+        for(const auto& entry:payload["books"].toArray()) {
+            const auto incoming=entry.toObject();const auto hash=incoming["hash"].toString();
+            QJsonObject book{{"user_id",user},{"book_hash",hash},{"title",incoming["title"]},{"author",incoming["author"]},
+                {"format","EPUB"},{"updated_at",incoming["updatedAt"]},{"synced_at",QDateTime::currentMSecsSinceEpoch()}};
+            bool exists=false;for(const auto& row:books) if(row.toObject()["book_hash"]==hash) exists=true;
+            if(!exists) books.append(book);
+        }
         for(const auto& entry:payload["configs"].toArray()) {
             const auto incoming=entry.toObject();
             const auto hash=incoming["bookHash"].toString();
-            if(!configs.contains(hash)) throw std::runtime_error("Unknown simulated book");
-            auto row=configs[hash].toObject();
+            auto row=configs[hash].toObject();row["user_id"]=user;row["book_hash"]=hash;
             row["location"]=incoming["location"]; row["xpointer"]=incoming["xpointer"];
             if(incoming["progress"].isArray())
                 row["progress"]=QString::fromUtf8(QJsonDocument(incoming["progress"].toArray()).toJson(QJsonDocument::Compact));
@@ -122,6 +146,13 @@ HttpResponse MockCloud::request(const std::string& address,const std::string& me
             configs[hash]=row;
         }
         saveRemote(); result={{"success",true}};
+    } else if(url.path()=="/api/storage/upload" && method=="POST") {
+        const auto payload=QJsonDocument::fromJson(QByteArray::fromStdString(body)).object();
+        const auto key=user+"/"+payload["fileName"].toString();
+        if(!key.startsWith(user+"/Readest/Books/") || key.contains("..")) throw std::runtime_error("Invalid simulated upload key");
+        bool exists=false;for(const auto& file:files) if(file.toObject()["file_key"]==key) exists=true;
+        if(!exists) files.append(QJsonObject{{"book_hash",payload["bookHash"]},{"file_key",key},{"file_size",payload["fileSize"]},{"updated_at",QDateTime::currentMSecsSinceEpoch()}});
+        saveRemote();result={{"uploadUrl","https://storage.simulator/"+QString::fromLatin1(QUrl::toPercentEncoding(key))}};
     } else if(url.path()=="/api/storage/list" && method=="GET") {
         QJsonArray selected;
         const auto hash=query.queryItemValue("bookHash");
@@ -129,7 +160,7 @@ HttpResponse MockCloud::request(const std::string& address,const std::string& me
         result={{"files",selected},{"page",1},{"totalPages",1}};
     } else if(url.path()=="/api/storage/download" && method=="GET") {
         const auto key=query.queryItemValue("fileKey",QUrl::FullyDecoded);
-        if(!objects.contains(key)) return {404,"{}",0};
+        if(!objects.contains(key) && !QFile::exists(root+"/object-"+QString::fromLatin1(QUrl::toPercentEncoding(key)))) return {404,"{}",0};
         result={{"downloadUrl","https://storage.simulator/"+QString::fromLatin1(QUrl::toPercentEncoding(key))}};
     } else throw std::runtime_error("Simulator has no fixture for this request");
     const auto bytes=json(result);
@@ -144,6 +175,21 @@ HttpResponse MockCloud::download(const std::string& address,int fd,const std::st
     if(url.host()!="storage.simulator" || url.scheme()!="https")
         throw std::runtime_error("Simulator blocked an unknown download origin");
     const auto key=url.path(QUrl::FullyDecoded).mid(1);
+    QFile uploaded(root+"/object-"+QString::fromLatin1(QUrl::toPercentEncoding(key)));
+    if(uploaded.exists()) {
+        if(!uploaded.open(QIODevice::ReadOnly) || uploaded.size()<0 || static_cast<size_t>(uploaded.size())>cap) throw std::runtime_error("Invalid simulated upload object");
+        size_t total=0;
+        while(!uploaded.atEnd()) {
+            pause(mode==1?50:0,cancellation);const auto chunk=uploaded.read(16384);
+            if(chunk.isEmpty()) throw std::runtime_error("Cannot read simulated upload");
+            size_t at=0;while(at<static_cast<size_t>(chunk.size())) {
+                auto n=write(fd,chunk.constData()+at,chunk.size()-at);if(n<0 && errno==EINTR) continue;
+                if(n<=0) throw std::runtime_error("Cannot write simulated download");at+=n;
+            }
+            total+=at;
+        }
+        return {200,"",total};
+    }
     QByteArray bytes;
     { QMutexLocker lock(&remoteMutex); if(!objects.contains(key)) return {404,"",0}; bytes=objects[key]; }
     if(static_cast<size_t>(bytes.size())>cap) throw std::runtime_error("Simulator download exceeds limit");
@@ -170,6 +216,24 @@ HttpTransport MockCloud::transport() {
     };
     result.download=[self](const std::string& url,int fd,const std::string& ca,size_t cap,const std::atomic<bool>& cancel) {
         return self->download(url,fd,ca,cap,cancel);
+    };
+    result.upload=[self](const std::string& address,int fd,const std::string&,size_t size,const std::atomic<bool>& cancel) -> HttpResponse {
+        pause(20,cancel);if(self->transferMode.load()==2) return {503,"",0};
+        const QUrl url(QString::fromStdString(address));
+        if(url.host()!="storage.simulator" || url.scheme()!="https") throw std::runtime_error("Unknown mock upload origin");
+        const auto key=url.path(QUrl::FullyDecoded).mid(1);
+        {QMutexLocker lock(&self->remoteMutex);bool found=false;
+         for(const auto& file:self->files) if(file.toObject()["file_key"]==key && file.toObject()["file_size"].toInteger()==static_cast<qint64>(size)) found=true;
+         if(!found) throw std::runtime_error("Missing simulated upload reservation");}
+        QSaveFile file(self->root+"/object-"+QString::fromLatin1(QUrl::toPercentEncoding(key)));
+        if(!file.open(QIODevice::WriteOnly) || lseek(fd,0,SEEK_SET)<0) throw std::runtime_error("Cannot stage simulated upload");
+        char chunk[16384];size_t at=0;
+        while(at<size) {
+            pause(self->transferMode.load()==1?50:0,cancel);
+            const auto n=read(fd,chunk,qMin(sizeof(chunk),size-at));if(n<0 && errno==EINTR) continue;
+            if(n<=0 || file.write(chunk,n)!=n) throw std::runtime_error("Cannot stream simulated upload");at+=n;
+        }
+        if(!file.commit()) throw std::runtime_error("Cannot commit simulated upload");return {200,"",0};
     };
     return result;
 }

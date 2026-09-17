@@ -23,11 +23,11 @@ Item {
         Row {
             width: parent.width; spacing: shell.gap / 2
             Repeater {
-                model: ["All books", "Available to download", "On device", "Progress only"]
+                model: ["All books", "Available to download", "On device", "Progress only", "PocketBook only"]
                 delegate: Rectangle {
                     required property int index
                     required property string modelData
-                    width: (toolbar.width - 3 * shell.gap / 2) / 4
+                    width: (toolbar.width - 4 * shell.gap / 2) / 5
                     height: shell.buttonHeight
                     color: shell.view.library.availabilityFilter === index ? "black" : "white"
                     border.color: "black"
@@ -126,6 +126,6 @@ Item {
         }
         BodyText { width: parent.width; text: (shell.view.library.count || 0) + " books · Page " + (shell.view.library.page || 1) + " / " + (shell.view.library.pages || 1); horizontalAlignment: Text.AlignHCenter }
         BodyText { width: parent.width; text: shell.view.status || ""; font.pixelSize: Math.max(14, shell.width / 65); maximumLineCount: 3; elide: Text.ElideRight }
-        ActionButton { width: parent.width; text: "Sign out"; onAction: shell.view.signOut() }
+        ActionButton { width: parent.width; text: shell.view.signedIn ? "Sign out" : "Sign in to Readest"; onAction: shell.view.signedIn ? shell.view.signOut() : shell.view.showSignIn() }
     }
 }

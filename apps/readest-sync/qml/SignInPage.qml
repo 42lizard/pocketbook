@@ -25,5 +25,6 @@ Column {
         width: parent.width; text: "Sign in"
         onAction: { var secret = password.text; password.text = ""; shell.view.signIn(email.text, secret) }
     }
+    ActionButton { width: parent.width; text: "Back to library"; onAction: shell.view.back() }
     BodyText { width: parent.width; text: shell.view.status || "" }
 }

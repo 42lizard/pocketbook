@@ -93,8 +93,9 @@ RemoteProgress fetch_progress(Cloud& cloud, const std::string& hash, long long n
 }
 VerifiedManagedBook::VerifiedManagedBook(const ManagedBook& book):book_(book) {
     const auto bytes=inspect_epub(book_.path);
-    if(bytes.readest_hash!=book_.book.hash || bytes.sha256!=book_.sha256 || bytes.size!=book_.size)
+    if((book_.sha256.empty() && book_.copies.empty()) || bytes.readest_hash!=book_.book.hash || (!book_.sha256.empty() && bytes.sha256!=book_.sha256) || bytes.size!=book_.size)
         throw std::runtime_error("Local book bytes changed; synchronization stopped");
+    book_.sha256=bytes.sha256;
 }
 SyncAction sync_managed(Cloud& cloud, State& state, const ManagedBook& book,
                         const std::string& local, long long now,

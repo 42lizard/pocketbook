@@ -25,6 +25,8 @@ struct HttpTransport {
         const std::atomic<bool>&)>;
     Request request;
     Download download;
+    // Streams exactly size bytes from an open regular file; no bearer token.
+    Download upload;
     std::function<HttpResponse(const std::string&, const std::string&, const std::vector<std::string>&,
         const std::string&, const std::string&, size_t)> bind_request(const std::atomic<bool>& cancel) const {
         auto call=request;

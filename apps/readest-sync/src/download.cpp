@@ -180,9 +180,9 @@ StoredBook download_book(Cloud& cloud, const LibraryBook& book, const std::strin
     return stored;
 }
 std::string cover_path(const std::string& root,const std::string& user,const std::string& hash,const BookFiles& files) {
-    if(user.empty() || hash.size()!=32 || hash.find_first_not_of("0123456789abcdef")!=std::string::npos || files.cover_stamp<0)
+    if(hash.size()!=32 || hash.find_first_not_of("0123456789abcdef")!=std::string::npos || files.cover_stamp<0)
         return "";
-    return root+"/cover-"+encode(user)+"-"+hash+"-"+std::to_string(files.cover_stamp)+"-"+std::to_string(files.cover_size)+".png";
+    return root+"/cover-"+(user.empty()?"device":encode(user))+"-"+hash+"-"+std::to_string(files.cover_stamp)+"-"+std::to_string(files.cover_size)+".png";
 }
 CoverFormat cover_format(const std::string& path) {
     int fd=open(path.c_str(),O_RDONLY|O_NOFOLLOW);

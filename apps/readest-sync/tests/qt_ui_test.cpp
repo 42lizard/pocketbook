@@ -187,6 +187,10 @@ int main(int argc,char** argv) {
     DeviceAccess device;
     device.connect=[](std::function<void(int)> callback) { callback(0); return true; };
     device.ping=[] {}; device.open=[](const QString&) { return true; };
+    assert(QDir().mkpath(QString::fromStdString(config.database).section('/',0,-2)));
+    sqlite3* native=nullptr; assert(sqlite3_open(config.database.c_str(),&native)==SQLITE_OK);
+    assert(sqlite3_exec(native,"CREATE TABLE files(book_id,folder_id,storageid,filename,fast_hash);CREATE TABLE folders(id,storageid,name);CREATE TABLE books_settings(bookid,profileid,position,position_ts,cpage,npage);",nullptr,nullptr,nullptr)==SQLITE_OK);
+    assert(sqlite3_close(native)==SQLITE_OK);
     AppController control(config,device); control.initialize(); finish(control);
     assert(control.initialized() && control.signedIn());
     auto* model=control.library(); assert(model->count()==51 && model->pages()==9 && model->rowCount()==6);
@@ -215,6 +219,10 @@ int main(int argc,char** argv) {
     LibraryModel independent;
     auto reversed=model->entries(); std::reverse(reversed.begin(),reversed.end()); independent.replace(reversed);
     assert(independent.find(first)->id==first); independent.search("example author"); assert(independent.count()==51);
+    LibraryEntry local; local.id={"",std::string(32,'b')};local.book.local_only=true;local.availability=Availability::OnDevice;
+    independent.replace({local,*model->find(first)}); independent.search("");
+    independent.filter(4);assert(independent.count()==1 && independent.at(0).book.local_only);
+    independent.filter(2);assert(independent.count()==2);
     // Separate instances and headless application operations have independent state.
     const auto other=configAt(temp.path()+"/other");
     { QFile file(QString::fromStdString(other.root+"/session.json")); assert(file.open(QIODevice::WriteOnly)); file.write("{bad"); }
@@ -226,6 +234,19 @@ int main(int argc,char** argv) {
     second.signIn("",""); assert(!second.busy() && second.status()=="Enter both your email and password first.");
     Request stale; stale.command=Command::Download; stale.book=first;
     assert(service.execute(stale,cancel).outcome==Outcome::Failed);
+    {
+        State state(other.root+"/state.db");
+        LocalCopy a; a.path=(temp.path()+"/local.epub").toStdString();a.hash=std::string(32,'c');a.title="Device only";a.size=1;a.position="alpha";
+        LocalCopy b=a;b.path=(temp.path()+"/copy.epub").toStdString();b.position="bravo";
+        assert(QFile::copy(QString::fromStdString(a.path),QString::fromStdString(b.path)));
+        state.replace_local_copies({a,b});
+    }
+    AppController localControl(other,device);localControl.initialize();finish(localControl);
+    localControl.selectBook("",QString(32,'c'));assert(localControl.detail());
+    assert(localControl.actions().front().toMap()["command"]=="copy:0");
+    localControl.runAction("copy:1");finish(localControl);
+    assert(localControl.actions().front().toMap()["command"]=="offline");
+    localControl.runAction("signin");assert(localControl.signingIn());localControl.back();assert(!localControl.signingIn());
     QQmlApplicationEngine engine; engine.addImportPath(READEST_TEST_CONTROLS);
     engine.addImageProvider("cover",new CoverProvider(QString::fromStdString(config.root)));
     engine.rootContext()->setContextProperty("appController",&control);
@@ -255,6 +276,7 @@ int main(int argc,char** argv) {
     control.scanDevice(); assert(control.busy()); finish(control);
     assert(control.status().startsWith("Device scan complete") && cover_requests<=2); // Foreground work interrupts the cover batch.
     control.signOut(); finish(control); settle();
+    control.showSignIn();settle();
     assert(window->findChild<QObject*>("emailInput") && window->findChild<QObject*>("passwordInput"));
     assert(!warnings);
     std::cout<<"Application isolation, public commands, model/filter identity, runner lifetime and QML checks passed.\n";
