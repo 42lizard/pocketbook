@@ -20,6 +20,10 @@ SIMULATOR_APP=hello docker compose up -d --build simulator      # Hello
 SIMULATOR_APP=readest-sync docker compose up -d simulator       # Switch back
 ```
 
+The image uses Clang 19 for C and C++, matching the CI compiler family.
+Startup explicitly configures the compiler so existing GCC build caches are
+reconfigured automatically; simulator data is retained.
+
 The first run installs dependencies and compiles the selected app. Once
 `docker compose logs -f simulator` reports the URL, open:
 
