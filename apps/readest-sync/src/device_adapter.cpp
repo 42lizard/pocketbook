@@ -1,16 +1,21 @@
 #include "device_adapter.h"
 #include "platform.h"
 #include "public_config.h"
+#include "network_trace.h"
 #include <QDir>
 #include <QSaveFile>
+#include <QCoreApplication>
 #include <mutex>
+#include <thread>
 
 namespace {
 // InkView has one callback slot and no userdata/cancel API. Keep ownership here,
 // beyond any runner's lifetime, until the outstanding callback arrives.
 std::mutex network_mutex;
 std::function<void(int)> pending_connection;
+std::atomic<bool> ping_running{false};
 int network_result(int result) {
+    networkTrace("connect.callback",result);
     std::function<void(int)> callback;
     { std::lock_guard<std::mutex> lock(network_mutex); callback=std::move(pending_connection); pending_connection=nullptr; }
     if(callback) callback(result);
@@ -29,13 +34,48 @@ readest::ApplicationConfig deviceApplicationConfig() {
 DeviceAccess deviceAccess() {
     DeviceAccess access;
     access.connect=[](std::function<void(int)> callback) {
+        networkTrace("connect.request");
         { std::lock_guard<std::mutex> lock(network_mutex);
-          if(pending_connection) return false;
+          if(pending_connection) { networkTrace("connect.pending");return false; }
           pending_connection=std::move(callback); }
-        platform::connectNetwork(network_result); return true;
+        try {
+            std::thread([] {
+                // WiFiPower waits for netagent too. Wake the radio first, while
+                // Qt continues processing cancellation and the connection timer.
+                try {
+                    networkTrace("wake.begin");
+                    const int status=platform::wakeNetwork();
+                    networkTrace("wake.end",status);
+                    if(status!=0) { network_result(status);return; }
+                    if(!QMetaObject::invokeMethod(QCoreApplication::instance(),[] {
+                        networkTrace("connect.begin");
+                        const int result=platform::connectNetwork(network_result);
+                        networkTrace("connect.return",result);
+                        if(result!=0) network_result(result);
+                    },Qt::QueuedConnection)) network_result(-1);
+                } catch(...) { network_result(-1); }
+            }).detach();
+        } catch(...) { network_result(-1); }
+        return true;
     };
-    access.ping=[] { platform::pingNetwork(); };
+    access.ping=[] {
+        // NetMgrPing waits for netagent on device. Never wait on the Qt thread,
+        // and never accumulate workers if the firmware call stops returning.
+        if(ping_running.exchange(true)) return;
+        try {
+            std::thread([] {
+                networkTrace("ping.begin");
+                try { platform::pingNetwork(); } catch(...) {}
+                networkTrace("ping.end");
+                ping_running=false;
+            }).detach(); // Process-owned call: captures no runner, UI or session.
+        } catch(...) { ping_running=false; }
+    };
     access.networkReady=[] { return platform::networkReady(); };
+    access.keepAwake=[](bool active) {
+        platform::keepAwake(active);
+        networkTrace("standby.prevented",active);
+    };
     access.open=[](const QString& path) { return platform::openBook(path); };
     const auto root=platform::dataRoot().toStdString();
     access.prepareCover=[root](const readest::LibraryEntry& entry) -> QString {

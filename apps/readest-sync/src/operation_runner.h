@@ -31,4 +31,5 @@ private:
     readest::OperationResult result_;
     void launch();
     void poll();
+    void releaseAwake();
 };

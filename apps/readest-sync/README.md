@@ -305,10 +305,22 @@ test EPUB fixture. It does not package the current cloud executable as a probe.
 ### Network connection handling
 
 Login, library refresh, downloads, and progress sync first request a connection
-through PocketBook's network manager. The app waits up to 60 seconds and refreshes
+through PocketBook's network manager. When a connection is needed, the app first
+powers on the Wi-Fi radio using the firmware API, off the UI thread. A successful
+connection callback alone does not start the request: the network must also have
+a default route. The app waits up to 60 seconds and refreshes
 the Wi-Fi power-off timer every 30 seconds while an online action is active.
-Completion and cancellation stop the keepalive; normal OS power saving remains
-in effect. Startup, sign-out, and **Read offline** do not request Wi-Fi.
+Keepalive calls run off the UI thread, with at most one in flight, so a stalled
+firmware network manager cannot block Cancel or the connection timeout.
+Online actions also prevent CPU standby while connecting and transferring, so
+background work and the connection deadline can continue without screen taps.
+Completion, failure, cancellation, and exit release that protection and stop
+the keepalive. Normal OS power saving resumes afterward. Startup, sign-out, and
+**Read offline** do not request Wi-Fi.
+
+Temporary diagnostics remain enabled in `system/readest-sync/network.log`.
+The log is bounded to approximately 64 KiB and records connection stages, numeric
+status, and timing; it does not record credentials, network names, or book data.
 
 A failed connection does not start the operation. Choose **Read offline** to open
 an existing download without syncing. Transfer errors include the curl error code

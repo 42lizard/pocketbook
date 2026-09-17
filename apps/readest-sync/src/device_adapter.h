@@ -9,6 +9,7 @@ struct DeviceAccess {
     std::function<bool(std::function<void(int)>)> connect;
     std::function<void()> ping;
     std::function<bool()> networkReady;
+    std::function<void(bool)> keepAwake;
     std::function<bool(const QString&)> open;
     std::function<QString(const readest::LibraryEntry&)> prepareCover;
     int connectionTimeoutMs=60000;

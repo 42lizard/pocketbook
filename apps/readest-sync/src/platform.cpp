@@ -1,5 +1,6 @@
 #include "platform.h"
 #include "network_route.h"
+#include "network_trace.h"
 #include <fstream>
 #include <cstdlib>
 // Keep the legacy global macros out of the Qt controller and renderer.
@@ -12,12 +13,22 @@ QString firmware() { return QString::fromUtf8(GetSoftwareVersion()); }
 QString dataRoot() { return QStringLiteral("/mnt/ext1/system/readest-sync"); }
 QString nativeDatabase() { return QStringLiteral("/mnt/ext1/system/explorer-3/explorer-3.db"); }
 std::vector<std::string> bookRoots() { return {"/mnt/ext1", "/mnt/ext2"}; }
-void connectNetwork(int (*callback)(int)) { NetConnectAsync(callback); }
+int wakeNetwork() { return WiFiPower(1); }
+int connectNetwork(int (*callback)(int)) { return NetConnectAsync(callback); }
 void pingNetwork() { NetMgrPing(); }
+void keepAwake(bool active) { iv_sleepmode(active?0:1); }
 bool networkReady() {
-    if(!(QueryNetwork()&NET_CONNECTED)) return false;
+    static int previous_flags=-1,previous_route=-1;
+    if(previous_flags==-1) networkTrace("ready.first-probe");
+    const int flags=QueryNetwork();
     std::ifstream routes("/proc/net/route");
-    return readest::has_default_route(routes);
+    const bool route=readest::has_default_route(routes);
+    if(flags!=previous_flags || route!=previous_route) {
+        networkTrace("ready.flags",flags);
+        networkTrace("ready.route",route);
+        previous_flags=flags;previous_route=route;
+    }
+    return (flags&NET_CONNECTED) && route;
 }
 bool openBook(const QString& path) { return OpenBook(path.toUtf8().constData(),nullptr,0)!=0; }
 QImage localCover(const QString& path,const QSize& size) {

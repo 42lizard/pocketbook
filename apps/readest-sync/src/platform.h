@@ -12,9 +12,11 @@ QString firmware();
 QString dataRoot();
 QString nativeDatabase();
 std::vector<std::string> bookRoots();
-void connectNetwork(int (*callback)(int));
+int wakeNetwork();
+int connectNetwork(int (*callback)(int));
 void pingNetwork();
 bool networkReady();
+void keepAwake(bool active);
 bool openBook(const QString& path);
 QImage localCover(const QString& path,const QSize& size);
 }

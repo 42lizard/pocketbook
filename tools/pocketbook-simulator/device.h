@@ -18,6 +18,7 @@ public:
     void prepareStorage();
     void attachWindow(QQmlApplicationEngine&,const QUrl& overlay=QUrl("qrc:/pocketbook-simulator/DeviceOverlay.qml"));
     void connectNetwork(int (*callback)(int));
+    bool networkReady() const { return networkReady_; }
     QString message() const { return message_; }
     std::function<void(int)> buttonHandler;
     Q_INVOKABLE void network(int mode);
@@ -33,6 +34,7 @@ protected:
 private:
     QString message_;
     int networkMode_=0;
+    bool networkReady_=false;
     int (*pendingCallback_)(int)=nullptr;
 };
 }

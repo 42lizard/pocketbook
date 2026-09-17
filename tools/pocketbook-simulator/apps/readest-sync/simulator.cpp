@@ -68,9 +68,11 @@ QString firmware() { return "U743g.6.11.1683"; }
 QString dataRoot() { return storage()+"/system/readest-sync"; }
 QString nativeDatabase() { return storage()+"/system/explorer-3/explorer-3.db"; }
 std::vector<std::string> bookRoots() { return {storage().toStdString()}; }
-void connectNetwork(int (*callback)(int)) { simulator->connectNetwork(callback); }
+int wakeNetwork() { return 0; }
+void keepAwake(bool) {}
+int connectNetwork(int (*callback)(int)) { simulator->connectNetwork(callback);return 0; }
 void pingNetwork() {}
-bool networkReady() { return false; } // Connection modes exercise the callback path.
+bool networkReady() { return simulator && simulator->networkReady(); }
 bool openBook(const QString& path) { return simulator && simulator->open(path); }
 QImage localCover(const QString&,const QSize&) { return {}; }
 }

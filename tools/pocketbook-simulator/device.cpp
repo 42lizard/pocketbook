@@ -49,15 +49,15 @@ void Device::attachWindow(QQmlApplicationEngine& engine,const QUrl& url) {
 }
 void Device::report(const QString& text) { message_=text; emit changed(); }
 void Device::network(int mode) {
-    if(mode>=0 && mode<=3) { networkMode_=mode; report("Wi-Fi mode changed for the next connection."); }
+    if(mode>=0 && mode<=3) { networkMode_=mode; networkReady_=false;report("Wi-Fi mode changed for the next connection."); }
 }
 void Device::connectNetwork(int (*callback)(int)) {
     if(networkMode_==3) { pendingCallback_=callback; return; }
     const int mode=networkMode_;
-    QTimer::singleShot(mode==2?5000:150,this,[callback,mode] { callback(mode==1?-1:0); });
+    QTimer::singleShot(mode==2?5000:150,this,[this,callback,mode] { networkReady_=mode!=1;callback(mode==1?-1:0); });
 }
 void Device::releaseNetwork() {
-    if(pendingCallback_) { auto callback=pendingCallback_; pendingCallback_=nullptr; callback(0); report("Held Wi-Fi callback released."); }
+    if(pendingCallback_) { auto callback=pendingCallback_; pendingCallback_=nullptr;networkReady_=true;callback(0); report("Held Wi-Fi callback released."); }
 }
 void Device::button(int key) {
     if(buttonHandler) { buttonHandler(key); return; }

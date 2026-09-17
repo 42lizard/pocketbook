@@ -15,6 +15,12 @@
 #include <cassert>
 #include <iostream>
 using namespace readest;
+namespace platform_test {
+extern std::atomic<bool> hold_ping,ping_entered,ping_finished;
+extern std::atomic<int> ping_calls;
+extern std::atomic<bool> sleeping_wifi;
+extern std::atomic<int> wake_calls;
+}
 static void settle(int milliseconds=100) {
     QElapsedTimer timer; timer.start();
     while(timer.elapsed()<milliseconds) { QCoreApplication::processEvents(); QThread::msleep(1); }
@@ -50,6 +56,70 @@ static ApplicationConfig configAt(const QString& base) {
     return config;
 }
 static void runnerChecks() {
+    {
+        // An online operation must hold standby off before waking Wi-Fi,
+        // through the worker, and release it on every completion path.
+        bool awake=false,completed=false;int executions=0;
+        DeviceAccess device;
+        device.keepAwake=[&](bool value) { assert(awake!=value);awake=value; };
+        device.ping=[] {};
+        device.connectionTimeoutMs=1000;
+        device.connect=[&](std::function<void(int)> callback) { assert(awake);callback(0);return true; };
+        auto work=[&](const std::atomic<bool>&) { assert(awake);++executions;return OperationResult{}; };
+        auto complete=[&](OperationResult) { assert(!awake);completed=true; };
+        {
+            OperationRunner runner(device);
+            assert(runner.start(work,true,complete,[](bool) {}));
+            settle(450);assert(completed && !awake && executions==1);
+        }
+        device.connect=[&](std::function<void(int)>) { assert(awake);return false; };
+        {
+            OperationRunner runner(device);
+            assert(!runner.start(work,true,complete,[](bool) {}));assert(!awake);
+        }
+        device.connect=[&](std::function<void(int)>) { assert(awake);return true; };
+        device.connectionTimeoutMs=20;
+        for(bool cancel:{false,true}) {
+            completed=false;
+            OperationRunner runner(device);
+            assert(runner.start(work,true,complete,[](bool) {}));assert(awake);
+            if(cancel) runner.cancel();
+            settle(250);assert(completed && !awake);
+            assert(!runner.start(work,true,complete,[](bool) {}));assert(!awake);
+        }
+        {
+            OperationRunner runner(device);
+            assert(runner.start(work,true,complete,[](bool) {}));assert(awake);
+        }
+        assert(!awake && executions==1);
+    }
+    {
+        platform_test::sleeping_wifi=true;platform_test::wake_calls=0;
+        auto device=deviceAccess();device.connectionTimeoutMs=400;
+        OperationRunner runner(device);bool connected=false;
+        runner.start([](const std::atomic<bool>&) { return OperationResult{}; },true,
+            [&](OperationResult r) { connected=r.outcome==Outcome::Ready; },[](bool) {});
+        settle(650);
+        assert(connected && platform_test::wake_calls==1 && !platform_test::sleeping_wifi);
+    }
+    {
+        // Firmware keepalive may block; the UI deadline must still fire.
+        platform_test::hold_ping=true;platform_test::ping_entered=false;platform_test::ping_finished=false;platform_test::ping_calls=0;
+        auto device=deviceAccess();device.connectionTimeoutMs=20;
+        device.networkReady=[] { return false; };
+        device.ping();
+        device.connect=[](std::function<void(int)>) { return true; };
+        bool timed_out=false,worked=false;
+        OperationRunner runner(device);
+        runner.start([&](const std::atomic<bool>&) { worked=true;return OperationResult{}; },true,
+            [&](OperationResult r) { timed_out=r.outcome==Outcome::Failed; },[](bool) {});
+        settle(300);
+        device.ping();device.ping(); // A stalled call must not spawn more workers.
+        const bool responsive=timed_out && !worked && platform_test::ping_entered && !platform_test::ping_finished;
+        platform_test::hold_ping=false;
+        settle(50);
+        assert(responsive && platform_test::ping_finished && platform_test::ping_calls==1);
+    }
     for(const auto& row : {"", "Iface Destination Gateway Flags RefCnt Use Metric Mask",
             "wlan0 0010A8C0 00000000 0001 0 0 0 00FFFFFF",
             "wlan0 00000000 0100A8C0 0000 0 0 0 00000000",
@@ -105,6 +175,15 @@ static void runnerChecks() {
     }
     assert(stopped);
     {
+        auto waiting=device;
+        waiting.connect=[](std::function<void(int)> callback) { callback(0);return true; };
+        waiting.networkReady=[] { return false; };waiting.connectionTimeoutMs=20;
+        OperationRunner runner(waiting);bool timed_out=false;
+        runner.start([](const std::atomic<bool>&) { assert(false);return OperationResult{}; },true,
+            [&](OperationResult r) { timed_out=r.outcome==Outcome::Failed; },[](bool) {});
+        settle(250);assert(timed_out && !runner.busy());
+    }
+    {
         OperationRunner runner(device);
         runner.start([](const std::atomic<bool>&)->OperationResult { throw std::runtime_error("fixture error"); },false,
             [&](OperationResult r) { assert(r.outcome==Outcome::Failed && r.error=="fixture error"); ++completed; },[](bool) {});
@@ -134,7 +213,8 @@ static void runnerChecks() {
         assert(runner.start(work,true,finish,[](bool) {}));
         assert(connections==2);
         auto reply=std::move(pending); pending=nullptr; reply(0);
-        settle(500); assert(executions==4);
+        settle(250);assert(runner.busy() && executions==3);
+        ready=true;settle(250); assert(executions==4);
     }
 }
 int main(int argc,char** argv) {
@@ -247,6 +327,42 @@ int main(int argc,char** argv) {
     localControl.runAction("copy:1");finish(localControl);
     assert(localControl.actions().front().toMap()["command"]=="offline");
     localControl.runAction("signin");assert(localControl.signingIn());localControl.back();assert(!localControl.signingIn());
+    {
+        // Cloud deletion stays visible for local files, with an explicit restore
+        // action. A matching progress-only cloud row also offers EPUB upload.
+        const auto recovery=configAt(temp.path()+"/recovery");
+        const std::atomic<bool> not_cancelled{false};
+        Cloud auth(recovery.root+"/session.json",recovery.ca,recovery.public_key,recovery.auth_origin,recovery.api_origin,
+            recovery.transport.bind_request(not_cancelled));
+        auth.sign_in("test","test",1);
+        const auto hash=std::string(32,'d');
+        {
+            State state(recovery.root+"/state.db");LibraryPage page;page.cursor=1;
+            LibraryBook book;book.hash=hash;book.title="Removed book";book.format="EPUB";book.deleted=true;
+            page.books.push_back(book);state.apply_page("fixture-user",0,page);
+            StoredBook file;file.path=(temp.path()+"/local.epub").toStdString();file.integrity.readest_hash=hash;
+            file.integrity.sha256=std::string(64,'a');file.integrity.size=1;state.register_download("fixture-user",hash,file);
+            state.save_book_files("fixture-user",{});
+        }
+        auto has_action=[](AppController& controller,const QString& name) {
+            for(const auto& action:controller.actions()) if(action.toMap()["command"]==name) return true;
+            return false;
+        };
+        AppController removed(recovery,device);removed.initialize();finish(removed);
+        removed.selectBook("fixture-user",QString::fromStdString(hash));
+        assert(removed.hint().startsWith("Removed from Readest"));
+        assert(has_action(removed,"upload") && has_action(removed,"offline") && !has_action(removed,"sync"));
+        {
+            State state(recovery.root+"/state.db");LibraryPage page;page.cursor=2;
+            LibraryBook book;book.hash=hash;book.title="Progress only book";book.format="EPUB";
+            page.books.push_back(book);state.apply_page("fixture-user",1,page);
+        }
+        AppController progressOnly(recovery,device);progressOnly.initialize();finish(progressOnly);
+        progressOnly.selectBook("fixture-user",QString::fromStdString(hash));
+        assert(progressOnly.hint().contains("Readest has progress only"));
+        assert(has_action(progressOnly,"upload") && has_action(progressOnly,"sync"));
+        assert(QFile::exists(temp.path()+"/local.epub"));
+    }
     QQmlApplicationEngine engine; engine.addImportPath(READEST_TEST_CONTROLS);
     engine.addImageProvider("cover",new CoverProvider(QString::fromStdString(config.root)));
     engine.rootContext()->setContextProperty("appController",&control);
@@ -267,7 +383,7 @@ int main(int argc,char** argv) {
             assert(picture.save(output+(wide?"-landscape.png":"-portrait.png")));
     }
     control.selectBook("fixture-user",QString::fromStdString(first_hash)); settle();
-    assert(control.actions().size()==4); control.back();
+    assert(control.actions().size()==5); control.back();
     cover_scenario=true;
     control.refreshLibrary(); finish(control);
     assert(control.status().startsWith("Library refreshed"));
