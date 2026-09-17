@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (std::string(argv[3]) == "DOWNLOAD") {
-            std::unique_ptr<FILE, decltype(&fclose)> file(tmpfile(), fclose);
+            std::unique_ptr<FILE, int(*)(FILE*)> file(tmpfile(), fclose);
             if (!file) throw std::runtime_error("Cannot create test file");
             const auto response = transport.download(argv[1], fileno(file.get()), argv[2], std::stoul(argv[4]), cancelled);
             std::cout << response.status << '\n' << response.bytes << '\n';

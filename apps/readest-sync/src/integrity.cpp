@@ -121,7 +121,7 @@ BookIntegrity inspect_epub(const std::string& path) {
     }
     FILE* raw = fdopen(fd, "rb");
     if (!raw) { close(fd); throw std::runtime_error("Cannot read EPUB"); }
-    std::unique_ptr<FILE, decltype(&fclose)> file(raw, fclose);
+    std::unique_ptr<FILE, int(*)(FILE*)> file(raw, fclose);
     BookIntegrity result; result.size = before.st_size;
     Digest partial(EVP_md5()), whole(EVP_sha256());
     char bytes[32768];
