@@ -33,6 +33,7 @@ int main(int argc,char** argv) {
         }
         if(url.find("/api/sync?")!=std::string::npos) { HttpResponse r; r.status=200; r.body=R"({"books":[]})"; return r; }
         if(url.find("/api/storage/list?")!=std::string::npos) { HttpResponse r; r.status=200; r.body=R"({"page":1,"totalPages":1,"files":[]})"; return r; }
+        if(url.find("/api/storage/download?")!=std::string::npos) { HttpResponse r; r.status=404; return r; }
         assert(url.find("grant_type=password")!=std::string::npos);
         HttpResponse response; response.status=200;
         response.body=R"({"access_token":"dummy-access","refresh_token":"dummy-refresh","expires_at":9999999999,"user":{"id":"fixture-user"}})";
@@ -109,9 +110,14 @@ int main(int argc,char** argv) {
     request.command=Command::Refresh; result=service.execute(request,next_cancel);
     assert(result.outcome==Outcome::Refreshed);
     expected_cancel=&cancel;
+    request={}; request.command=Command::Covers; request.books={{"fixture-user",book.hash}};
+    result=service.execute(request,cancel);
+    assert(result.cover_updates.empty() && result.cover_attempts==request.books);
+    cancel=true; result=service.execute(request,cancel); cancel=false;
+    assert(result.outcome==Outcome::Cancelled && result.cover_attempts.empty());
     request.command=Command::SignOut; result=service.execute(request,cancel);
     assert(result.outcome==Outcome::SignedOut && !result.library.signed_in && result.library.books.empty());
-    assert(access(local.c_str(),F_OK)==0 && requests==before_refresh+4);
+    assert(access(local.c_str(),F_OK)==0 && requests==before_refresh+5);
     config.transport.download={};
     bool incomplete_rejected=false;
     try { ApplicationService incomplete(config); } catch(const std::invalid_argument&) { incomplete_rejected=true; }

@@ -1,11 +1,11 @@
 #pragma once
 #include "application.h"
+#include "cover_loader.h"
 #include "device_adapter.h"
 #include "library_model.h"
 #include "operation_runner.h"
 #include <QObject>
 #include <QVariantList>
-#include <set>
 
 class AppController : public QObject {
     Q_OBJECT
@@ -22,7 +22,7 @@ public:
     explicit AppController(QObject* parent=nullptr);
     AppController(readest::ApplicationConfig config,DeviceAccess device,QObject* parent=nullptr);
     ~AppController() override;
-    bool busy() const { return (runner_.busy() && !background_) || bool(pending_request_); }
+    bool busy() const { return (runner_.busy() && !covers_.active()) || bool(pending_request_); }
     bool initialized() const { return initialized_; }
     bool signedIn() const { return signed_in_; }
     bool detail() const { return !selected_.hash.empty(); }
@@ -52,15 +52,13 @@ private:
     std::shared_ptr<readest::ApplicationService> service_;
     LibraryModel library_;
     OperationRunner runner_; // Destroy/join the runner before the service.
+    VisibleCoverLoader covers_; // Invalidates callbacks before runner destruction.
     readest::BookId selected_;
     enum class ChoiceState { None, SyncConflict, OpenConflict };
     ChoiceState choice_=ChoiceState::None;
     long long revision_=0;
     bool initialized_=false,signed_in_=false,exiting_=false,reader_opened_=false;
     QString status_="Starting…",busy_message_;
-    unsigned cover_generation_=0;
-    bool background_=false,load_cloud_covers_=false;
-    std::set<std::string> attempted_covers_;
     std::unique_ptr<readest::Request> pending_request_;
     void submit(readest::Request request);
     void complete(const readest::Request& request,readest::OperationResult result);

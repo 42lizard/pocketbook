@@ -60,7 +60,22 @@ QString operationMessage(Command command) {
 }
 AppController::AppController(QObject* parent):AppController(deviceApplicationConfig(),deviceAccess(),parent) {}
 AppController::AppController(ApplicationConfig config,DeviceAccess device,QObject* parent)
-    :QObject(parent),device_(std::move(device)),service_(std::make_shared<ApplicationService>(std::move(config))),library_(this),runner_(device_,this) {
+    :QObject(parent),device_(std::move(device)),service_(std::make_shared<ApplicationService>(std::move(config))),library_(this),runner_(device_,this),
+     covers_({
+         [this](std::function<void()> work) { QTimer::singleShot(0,this,std::move(work)); },
+         [this](const LibraryEntry& entry) { return device_.prepareCover?device_.prepareCover(entry).toStdString():std::string(); },
+         [this](const std::vector<BookId>& ids,VisibleCoverLoader::Completion done) {
+             Request request; request.command=Command::Covers; request.books=ids;
+             const auto service=service_;
+             return runner_.start([service,request](const std::atomic<bool>& cancel) { return service->execute(request,cancel); },
+                                  true,std::move(done),[](bool) {});
+         },
+         [this] { runner_.cancel(); }},
+         [this](const BookId& id,const std::string& path) { library_.setCover(id,QString::fromStdString(path)); },
+         [this] {
+             if(exiting_) { QCoreApplication::quit(); return; }
+             if(pending_request_) { auto next=std::move(*pending_request_); pending_request_.reset(); submit(std::move(next)); }
+         }) {
     connect(&library_,&LibraryModel::navigationChanged,this,[this] { prepareCovers(); });
 }
 AppController::~AppController() { runner_.cancel(); }
@@ -94,35 +109,27 @@ QVariantList AppController::actions() const {
 }
 void AppController::submit(Request request) {
     if(runner_.busy()) {
-        if(background_ && request.command!=Command::Covers) { pending_request_.reset(new Request(std::move(request))); runner_.cancel(); emit changed(); }
+        if(covers_.active()) { pending_request_=std::make_unique<Request>(std::move(request)); covers_.show({}); emit changed(); }
         return;
     }
-    background_=request.command==Command::Covers;
+    covers_.show({});
     const bool online=request.command==Command::SignIn || request.command==Command::Refresh || request.command==Command::Download ||
-        request.command==Command::Sync || request.command==Command::Open || request.command==Command::Covers;
+        request.command==Command::Sync || request.command==Command::Open;
     const auto message=operationMessage(request.command);
     // The completion captures no credentials. Service work cannot mutate presentation state.
-    Request context; context.command=request.command; context.book=request.book; context.choice=request.choice; context.books=request.books;
+    Request context; context.command=request.command; context.book=request.book; context.choice=request.choice;
     const auto service=service_;
     const bool started=runner_.start([service,request=std::move(request)](const std::atomic<bool>& cancel) {
         return service->execute(request,cancel);
     },online,[this,context](OperationResult result) { complete(context,std::move(result)); },
-    [this,message](bool connecting) { busy_message_=connecting?QStringLiteral("Connecting to Wi-Fi"):message; ++cover_generation_; emit changed(); });
-    if(!started && background_) { background_=false; return; }
+    [this,message](bool connecting) { busy_message_=connecting?QStringLiteral("Connecting to Wi-Fi"):message; emit changed(); });
     if(!started) { status_="The previous Wi-Fi connection is still finishing. Try again shortly."; emit changed(); }
 }
 void AppController::complete(const Request& request,OperationResult result) {
     if(exiting_) { QCoreApplication::quit(); return; }
-    if(request.command==Command::Covers) {
-        background_=false;
-        for(const auto& update:result.cover_updates) library_.setCover(update.first,QString::fromStdString(update.second));
-        if(result.outcome==Outcome::Cancelled) for(const auto& id:request.books) attempted_covers_.erase(id.account+"/"+id.hash);
-        if(pending_request_) { auto next=std::move(*pending_request_); pending_request_.reset(); submit(std::move(next)); }
-        else prepareCovers();
-        return;
-    }
-    if(request.command==Command::Refresh && result.outcome==Outcome::Refreshed) { load_cloud_covers_=true; attempted_covers_.clear(); }
-    if(request.command==Command::SignOut) { load_cloud_covers_=false; attempted_covers_.clear(); }
+    if(request.command==Command::Initialize || (request.command==Command::SignIn && result.outcome==Outcome::SignedIn))
+        covers_.resetSession(result.library.account);
+    if(request.command==Command::Refresh && result.outcome==Outcome::Refreshed) covers_.refreshed();
     if(result.library.initialized) {
         initialized_=true; signed_in_=result.library.signed_in;
         library_.replace(std::move(result.library.books));
@@ -144,28 +151,10 @@ void AppController::complete(const Request& request,OperationResult result) {
     }
 }
 void AppController::prepareCovers() {
-    const auto generation=++cover_generation_;
-    if(busy() || detail()) return;
-    for(int row=0;row<library_.rowCount();++row) {
-        const auto id=library_.at(row).id;
-        QTimer::singleShot(row,this,[this,generation,id] {
-            if(generation!=cover_generation_ || busy()) return;
-            const auto* entry=library_.find(id);
-            if(!entry || !entry->cover.empty() || entry->availability!=Availability::OnDevice) return;
-            const auto image=device_.prepareCover?device_.prepareCover(*entry):QString();
-            if(!image.isEmpty()) library_.setCover(id,image);
-        });
-    }
-    if(load_cloud_covers_ && !runner_.busy()) QTimer::singleShot(0,this,[this,generation] {
-        if(generation!=cover_generation_ || runner_.busy() || detail()) return;
-        Request request; request.command=Command::Covers;
-        for(int row=0;row<library_.rowCount() && request.books.size()<6;++row) {
-            const auto& entry=library_.at(row);
-            const auto key=entry.id.account+"/"+entry.id.hash;
-            if(entry.cover.empty() && !entry.book.book.deleted && attempted_covers_.insert(key).second) request.books.push_back(entry.id);
-        }
-        if(!request.books.empty()) submit(std::move(request));
-    });
+    std::vector<LibraryEntry> visible;
+    if(signed_in_ && !busy() && !detail())
+        for(int row=0;row<library_.rowCount();++row) visible.push_back(library_.at(row));
+    covers_.show(std::move(visible));
 }
 void AppController::initialize() { if(!initialized_) submit(Request{}); }
 void AppController::signIn(const QString& email,const QString& password) {
@@ -174,7 +163,7 @@ void AppController::signIn(const QString& email,const QString& password) {
     if(email.trimmed().toUtf8().size()>=256 || password.toUtf8().size()>=1024) { status_="Email or password is too long."; emit changed(); return; }
     Request request; request.command=Command::SignIn; request.email=email.trimmed().toStdString(); request.password=password.toStdString(); submit(std::move(request));
 }
-void AppController::signOut() { if(!signed_in_) return; Request r; r.command=Command::SignOut; submit(r); }
+void AppController::signOut() { if(!signed_in_) return; covers_.resetSession(""); Request r; r.command=Command::SignOut; submit(r); }
 void AppController::refreshLibrary() { if(!signed_in_) return; Request r; r.command=Command::Refresh; submit(r); }
 void AppController::scanDevice() { if(!signed_in_) return; Request r; r.command=Command::Scan; submit(r); }
 void AppController::selectBook(const QString& account,const QString& hash) {
@@ -182,7 +171,7 @@ void AppController::selectBook(const QString& account,const QString& hash) {
     const BookId id{account.toStdString(),hash.toStdString()};
     const auto* entry=library_.find(id); if(!entry) return;
     selected_=id; revision_=entry->sync.revision; choice_=ChoiceState::None;
-    status_=availabilityLabel(entry->availability)+". "+QString::fromStdString(entry->book.book.author); emit changed();
+    status_=availabilityLabel(entry->availability)+". "+QString::fromStdString(entry->book.book.author); emit changed(); prepareCovers();
 }
 void AppController::runAction(const QString& command) {
     if(busy()) return;

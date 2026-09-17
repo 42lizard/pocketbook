@@ -42,6 +42,8 @@ enum class Outcome { Ready, SessionInvalid, SignedIn, SignedOut, Refreshed, Scan
 struct OperationResult {
     LibrarySnapshot library;
     std::vector<std::pair<BookId,std::string>> cover_updates;
+    // Terminal per-book attempts, including missing/failed covers, before cancellation.
+    std::vector<BookId> cover_attempts;
     Outcome outcome=Outcome::Ready;
     SyncAction sync_action=SyncAction::None;
     long long revision=0;

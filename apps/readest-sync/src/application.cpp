@@ -209,6 +209,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                                 if(cache_cover(*cloud_,config_.root,id.hash,book.files,config_.ca,time(nullptr),config_.transport.bind_download(cancel)))
                                     result.cover_updates.push_back({id,cover_path(config_.root,id.account,id.hash,book.files)});
                             } catch(const std::exception&) { check_cancel(cancel); }
+                            result.cover_attempts.push_back(id);
                             break;
                         }
                     }

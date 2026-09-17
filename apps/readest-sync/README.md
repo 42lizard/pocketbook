@@ -45,14 +45,22 @@ route while awaiting the firmware callback, so a missing callback does not block
 a connection that became available. This is a link/routing check; DNS and HTTPS
 failures still surface through the transfer's own timeouts and error handling.
 
+`VisibleCoverLoader` owns visible-page cover scheduling, cancellation, retry
+bookkeeping and stale-result rejection. The controller supplies page demand and
+suspends it for foreground operations or book details. Local extraction remains
+on the UI thread; remote batches of at most six books use the same sequential
+runner. Navigation preserves failed-attempt bookkeeping, successful Refresh
+allows retries, and session resets invalidate old results even for the same account.
+
 The device adapter supplies paths, Wi-Fi, reader handoff and local cover access.
 Native handoff runs on the UI thread after a successful operation. Local cover
 extraction is deferred device work for visible books, separate from rendering;
 model getters perform no filesystem or database I/O. Cloud cover decoding remains
 in the bounded image provider. Screens and shared QML controls are separate files.
 
-Tests link production sources normally. The integrity suite includes a headless
-application test with no Qt or network dependency. Qt tests exercise public
+Tests link production sources normally. The headless application test needs no
+Qt or network connection. The `cover-loader` CTest check uses controlled deferred
+work and completions to exercise cancellation, retries and account/page changes. Qt tests exercise public
 commands, independent controller instances, stable book identities, filtering,
 worker shutdown and late callbacks; simulator scenarios cover native sync and
 reader handoff. This refactor does not change persisted formats or native-position
