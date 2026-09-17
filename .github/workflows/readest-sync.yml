@@ -48,19 +48,15 @@ jobs:
           persist-credentials: false
       - name: Build SDK image
         run: docker compose build qt6
-      - name: Test core, HTTPS, installer and release packaging
+      - name: Check core-only host configuration
         run: |
-          docker compose run --rm -e HOST_CC=/usr/bin/cc -e HOST_CXX=/usr/bin/c++ qt6 sh -ec '
-            python3 apps/readest-sync/tests/test_probe.py
-            python3 apps/readest-sync/tests/test_cloud.py
-            python3 apps/readest-sync/tests/test_integrity.py
-            python3 apps/readest-sync/tests/test_http.py
-            python3 apps/readest-sync/tests/test_install.py
-            python3 apps/readest-sync/tests/test_release.py
+          docker compose run --rm qt6 sh -ec '
+            unset CMAKE_TOOLCHAIN_FILE
+            cmake -S apps/readest-sync -B build/readest-sync/host-linux -DREADEST_HOST_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+            cmake --build build/readest-sync/host-linux --target application-test -j2
+            ctest --test-dir build/readest-sync/host-linux -R "^application$" --output-on-failure
           '
-      - name: Test Qt UI and operation lifecycle
-        run: docker compose run --rm qt6 sh apps/readest-sync/tests/test_qt.sh
-      - name: Test simulator and headless mock transport
+      - name: Run complete CTest suite
         run: |
           docker compose run --rm qt6 sh -ec '
             unset CMAKE_TOOLCHAIN_FILE

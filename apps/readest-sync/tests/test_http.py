@@ -2,7 +2,7 @@
 """Exercise the actual C++ transport against an isolated HTTPS server."""
 from pathlib import Path
 import http.server
-import os
+from test_support import executable
 import ssl
 import subprocess
 import tempfile
@@ -10,7 +10,6 @@ import threading
 import time
 import unittest
 
-APP = Path(__file__).resolve().parents[1]
 
 
 class TransportTests(unittest.TestCase):
@@ -18,7 +17,7 @@ class TransportTests(unittest.TestCase):
     def setUpClass(cls):
         cls.work = tempfile.TemporaryDirectory(prefix='readest-https-')
         root = Path(cls.work.name)
-        cls.binary, cls.cert = root / 'http-test', root / 'cert.pem'
+        cls.binary, cls.cert = executable(), root / 'cert.pem'
         key = root / 'key.pem'
         config = root / 'openssl.cnf'
         config.write_text('[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n'
@@ -27,10 +26,6 @@ class TransportTests(unittest.TestCase):
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
                         '-days', '1', '-keyout', str(key), '-out', str(cls.cert),
                         '-config', str(config)], check=True, capture_output=True)
-        subprocess.run([os.environ.get('HOST_CXX', 'c++'), '-std=c++11', '-Wall', '-Wextra',
-                        '-Werror', '-I' + str(APP / 'src'), str(APP / 'src/http.cpp'),
-                        str(APP / 'tests/http_test.cpp'), '-lcurl', '-pthread',
-                        '-o', str(cls.binary)], check=True)
         cls.requests = []
 
         class Handler(http.server.BaseHTTPRequestHandler):

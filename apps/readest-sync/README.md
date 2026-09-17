@@ -217,19 +217,57 @@ Choose **Mock cloud** for local fixtures or **Real Readest** for your actual acc
 No device firmware is required.
 
 ```sh
-python3 apps/readest-sync/tests/test_probe.py
-python3 apps/readest-sync/tests/test_cloud.py
-python3 apps/readest-sync/tests/test_http.py
-python3 apps/readest-sync/tests/test_integrity.py
-python3 apps/readest-sync/tests/test_install.py
-docker compose run --rm qt6 sh tests/monorepo.sh
+# Core-only host checks (no Qt or PocketBook SDK required):
+cmake -S apps/readest-sync -B build/readest-sync/host -DREADEST_HOST_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build/readest-sync/host -j2
+ctest --test-dir build/readest-sync/host --output-on-failure
+
+# A targeted build and test, reusing the same production objects:
+cmake --build build/readest-sync/host --target application-test -j2
+ctest --test-dir build/readest-sync/host -R '^application$' --output-on-failure
+
+# Qt-only checks and monorepo isolation in the SDK container:
 docker compose run --rm qt6 sh apps/readest-sync/tests/test_qt.sh
+docker compose run --rm qt6 sh tests/monorepo.sh
 ```
 
-Host checks need C/C++ compilers, SQLite, json-c, libcurl, libxml2 and OpenSSL 3
-development libraries. On macOS they use Xcode and Homebrew. HTTPS tests bind
-a temporary localhost port with a generated certificate and dummy credentials.
-The integrity suite also checks download recovery and progress orchestration.
+Host checks need CMake 3.21+, a C++20 compiler, Python 3, pkg-config, SQLite,
+json-c, libcurl, libxml2 and OpenSSL development libraries. On macOS CMake finds
+Xcode libraries and Homebrew dependencies. The OpenSSL command-line tool is also
+needed for temporary TLS certificates. HTTPS tests bind a temporary localhost
+port and use dummy credentials.
+
+CMake owns compilation and passes each native executable to its Python harness
+through `READEST_TEST_BINARY`. Python only prepares fixtures and checks results.
+Run the harnesses through CTest; for direct debugging, set that variable to the
+absolute path of the already-built executable. Probe and HTTP harnesses also
+accept the usual Python unittest selectors. `ctest -N` lists tests; `-L core` and
+`-L packaging` select groups. Integrity, download, progress, application and scale
+checks are independently selectable. Assertions stay enabled for host tests,
+including Release builds. The application target uses the counted real validator.
+
+Build directories are specific to both platform and profile: do not reuse a macOS
+build directory inside Docker, or an ARM directory for host checks. In the SDK
+container, unset `CMAKE_TOOLCHAIN_FILE` before configuring any host profile.
+Use `CC`/`CXX` at the first CMake configuration to select native compilers.
+
+The simulator configuration includes the complete native, packaging, Qt and mock/
+real-transport test suite used by CI:
+
+```sh
+docker compose run --rm qt6 sh -ec '
+  unset CMAKE_TOOLCHAIN_FILE
+  cmake -S apps/readest-sync -B build/readest-sync/simulator -DPOCKETBOOK_SIMULATOR=ON -DCMAKE_BUILD_TYPE=Debug
+  cmake --build build/readest-sync/simulator -j2
+  ctest --test-dir build/readest-sync/simulator --output-on-failure
+'
+```
+
+The default configuration remains the PocketBook ARM app; use
+`docker compose run --rm qt6 make APP=readest-sync check` to build it and check its
+ABI. Its objects remain in `build/readest-sync/qt6` and its installable binary is
+`build/readest-sync/readest-sync.app`.
+
 The separate Qt suite exercises the real controller/QML using a desktop-only
 PocketBook controls shim, including all library pages and PNG/JPEG covers. These checks do not
 prove real-device rendering, live API behavior or arbitrary-passage equivalence.

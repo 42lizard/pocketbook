@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Host tests: C++ compiler, SQLite headers/library, and json-c required."""
+"""Native probe checks using the executable supplied by CTest."""
 from contextlib import closing
 from pathlib import Path
 import hashlib
 import importlib.util
 import json
-import os
+from test_support import executable
 import sqlite3
 import subprocess
 import tempfile
@@ -22,16 +22,8 @@ HASH = '0123456789ABCDEF0123456789ABCDEF'
 class ProbeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.binary = executable()
         cls.work = tempfile.TemporaryDirectory(prefix='readest-probe-tests-')
-        cls.binary = Path(cls.work.name) / 'probe-test'
-        command = [os.environ.get('HOST_CXX', 'c++'), '-std=c++11', '-Wall', '-Wextra', '-Werror',
-                   '-I' + str(APP / 'src'), str(APP / 'src/position.cpp'), str(APP / 'src/probe.cpp'),
-                   str(APP / 'src/sync.cpp'), str(APP / 'tests/sync_test.cpp'),
-                   str(APP / 'tests/probe_test.cpp'), '-o', str(cls.binary)]
-        if Path('/opt/homebrew/include/json-c/json.h').exists():
-            command += ['-isystem', '/opt/homebrew/include', '-L/opt/homebrew/lib']
-        command += ['-lsqlite3', '-ljson-c']
-        subprocess.run(command, check=True)
 
     @classmethod
     def tearDownClass(cls):

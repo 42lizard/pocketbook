@@ -1,0 +1,24 @@
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# Every driver links the production archive. Only the application driver replaces
+# the validator object with the counted real implementation; no duplicate archive.
+function(readest_native_test name script)
+  add_executable(${name}-test ${ARGN})
+  target_link_libraries(${name}-test PRIVATE readest-core)
+  target_compile_options(${name}-test PRIVATE -Wall -Wextra -Werror)
+  add_test(NAME ${name} COMMAND ${CMAKE_COMMAND} -E env
+    "READEST_TEST_BINARY=$<TARGET_FILE:${name}-test>"
+    ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/${script}")
+  set_tests_properties(${name} PROPERTIES LABELS core)
+endfunction()
+readest_native_test(probe test_probe.py probe_test.cpp sync_test.cpp)
+readest_native_test(cloud test_cloud.py cloud_test.cpp)
+readest_native_test(http test_http.py http_test.cpp)
+readest_native_test(integrity test_integrity.py integrity_test.cpp)
+readest_native_test(download test_epub_command.py download_test.cpp)
+readest_native_test(progress test_epub_command.py progress_test.cpp)
+readest_native_test(application test_epub_command.py application_test.cpp counted_integrity.cpp)
+readest_native_test(scale test_scale.py scan_scale_test.cpp)
+foreach(name install release)
+  add_test(NAME ${name} COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_${name}.py")
+  set_tests_properties(${name} PROPERTIES LABELS packaging)
+endforeach()
