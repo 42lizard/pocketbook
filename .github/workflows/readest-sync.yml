@@ -60,6 +60,14 @@ jobs:
           '
       - name: Test Qt UI and operation lifecycle
         run: docker compose run --rm qt6 sh apps/readest-sync/tests/test_qt.sh
+      - name: Test simulator and headless mock transport
+        run: |
+          docker compose run --rm qt6 sh -ec '
+            unset CMAKE_TOOLCHAIN_FILE
+            cmake -S apps/readest-sync -B build/readest-sync/simulator -DPOCKETBOOK_SIMULATOR=ON -DCMAKE_BUILD_TYPE=Debug
+            cmake --build build/readest-sync/simulator -j2
+            ctest --test-dir build/readest-sync/simulator --output-on-failure
+          '
       - name: Build PocketBook binary and check ARM ABI
         run: docker compose run --rm qt6 make APP=readest-sync check
       - name: Package installable ZIP

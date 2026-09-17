@@ -8,7 +8,11 @@
 #include <cstdio>
 
 namespace readest {
-ApplicationService::ApplicationService(ApplicationConfig config):config_(std::move(config)) {}
+ApplicationService::ApplicationService(ApplicationConfig config):config_(std::move(config)) {
+    if(!config_.transport.request && !config_.transport.download) config_.transport=https_transport();
+    if(!config_.transport.request || !config_.transport.download)
+        throw std::invalid_argument("Both request and download transports are required.");
+}
 void ApplicationService::trace(const char* phase) const {
     // Best-effort, bounded diagnostics. Only fixed phase names and process
     // metadata: never credentials, requests, filenames or book contents.
@@ -122,6 +126,12 @@ void ApplicationService::synchronize(const Request& request, OperationResult& re
     check_cancel(cancel); result.open_path=book.path;
 }
 OperationResult ApplicationService::execute(const Request& request,const std::atomic<bool>& cancel) {
+    // Cloud survives operations; its callback borrows only the current token.
+    struct Scope {
+        const std::atomic<bool>*& slot;
+        ~Scope() { slot=nullptr; }
+    } scope{operation_cancel_};
+    operation_cancel_=&cancel;
     OperationResult result;
     try {
         check_cancel(cancel);
@@ -131,7 +141,11 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
             make_directory(config_.books_root.substr(0,config_.books_root.rfind('/'))); make_directory(config_.books_root);
             state_.reset(new State(config_.root+"/state.db"));
             cloud_.reset(new Cloud(config_.root+"/session.json",config_.ca,config_.public_key,
-                config_.auth_origin,config_.api_origin,config_.transport?config_.transport:https_request));
+                config_.auth_origin,config_.api_origin,
+                [this](const std::string& url,const std::string& method,const std::vector<std::string>& headers,
+                    const std::string& body,const std::string& ca,size_t cap) {
+                    return config_.transport.request(url,method,headers,body,ca,cap,*operation_cancel_);
+                }));
             try { cloud_->load_session(); } catch(const std::exception&) { result.outcome=Outcome::SessionInvalid; }
             if(cloud_->session().signed_in()) {
                 const auto warnings=recover_downloads(*state_,cloud_->session().user_id,config_.books_root);
@@ -174,7 +188,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                     resolve(request.book); scan(cancel);
                     const auto book=resolve(request.book);
                     if(!book.path.empty()) { (void)VerifiedManagedBook(book); result.outcome=Outcome::Reused; break; }
-                    const auto stored=download_book(*cloud_,book.book,config_.books_root,config_.ca,time(nullptr));
+                    const auto stored=download_book(*cloud_,book.book,config_.books_root,config_.ca,time(nullptr),config_.transport.bind_download(cancel));
                     state_->register_download(request.book.account,request.book.hash,stored);
                     result.outcome=Outcome::Downloaded; break;
                 }
@@ -192,7 +206,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                         if(id.account!=cloud_->session().user_id) continue;
                         for(const auto& book:books) if(book.book.hash==id.hash && !book.book.deleted) {
                             try {
-                                if(cache_cover(*cloud_,config_.root,id.hash,book.files,config_.ca,time(nullptr)))
+                                if(cache_cover(*cloud_,config_.root,id.hash,book.files,config_.ca,time(nullptr),config_.transport.bind_download(cancel)))
                                     result.cover_updates.push_back({id,cover_path(config_.root,id.account,id.hash,book.files)});
                             } catch(const std::exception&) { check_cancel(cancel); }
                             break;

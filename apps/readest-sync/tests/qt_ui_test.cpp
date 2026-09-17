@@ -37,7 +37,7 @@ static ApplicationConfig configAt(const QString& base) {
     config.database=(base+"/system/explorer-3/explorer-3.db").toStdString();
     config.ca="test-ca"; config.public_key="public"; config.book_roots={base.toStdString()};
     config.auth_origin="https://auth.test"; config.api_origin="https://api.test";
-    config.transport=[](const std::string& url,const std::string&,const std::vector<std::string>&,const std::string&,const std::string&,size_t) {
+    config.transport.request=[](const std::string& url,const std::string&,const std::vector<std::string>&,const std::string&,const std::string&,size_t,const std::atomic<bool>&) {
         HttpResponse r; r.status=500; r.body="{}";
         if(url.find("grant_type=password")!=std::string::npos) {
             r.status=200;
@@ -45,6 +45,7 @@ static ApplicationConfig configAt(const QString& base) {
         }
         return r;
     };
+    config.transport.download=[](const std::string&,int,const std::string&,size_t,const std::atomic<bool>&) -> HttpResponse { throw std::runtime_error("Unexpected download"); };
     assert(QDir().mkpath(QString::fromStdString(config.root)));
     return config;
 }
@@ -142,16 +143,16 @@ int main(int argc,char** argv) {
     QTemporaryDir temp; assert(temp.isValid());
     auto config=configAt(temp.path());
     std::atomic<int> cover_requests{0}; bool cover_scenario=false;
-    const auto transport=config.transport;
-    config.transport=[&](const std::string& url,const std::string& method,const std::vector<std::string>& headers,
-        const std::string& body,const std::string& ca,size_t cap) {
+    const auto transport=config.transport.request;
+    config.transport.request=[&](const std::string& url,const std::string& method,const std::vector<std::string>& headers,
+        const std::string& body,const std::string& ca,size_t cap,const std::atomic<bool>& cancel) {
         if(cover_scenario) {
             HttpResponse r; r.status=200;
             if(url.find("/api/sync?")!=std::string::npos) { r.body=R"({"books":[]})"; return r; }
             if(url.find("/api/storage/list?")!=std::string::npos) { r.body=R"({"page":1,"totalPages":1,"files":[]})"; return r; }
             if(url.find("/api/storage/download?")!=std::string::npos) { ++cover_requests; QThread::msleep(300); r.status=404; return r; }
         }
-        return transport(url,method,headers,body,ca,cap);
+        return transport(url,method,headers,body,ca,cap,cancel);
     };
     std::string first_hash;
     {
@@ -179,7 +180,8 @@ int main(int argc,char** argv) {
         state.register_download("fixture-user",first_hash,stored);
         SavedSync saved; saved.pending_remote="epubcfi(/6/4!/4/2)";
         saved.remote_config=R"({"progress":[30,60],"updatedAt":200})"; state.save_sync("fixture-user",first_hash,saved);
-        Cloud cloud(config.root+"/session.json",config.ca,config.public_key,config.auth_origin,config.api_origin,config.transport);
+        const std::atomic<bool> cancel{false};
+        Cloud cloud(config.root+"/session.json",config.ca,config.public_key,config.auth_origin,config.api_origin,config.transport.bind_request(cancel));
         cloud.sign_in("test","test",1);
     }
     DeviceAccess device;

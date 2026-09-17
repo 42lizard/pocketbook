@@ -8,10 +8,6 @@
 using namespace readest;
 namespace readest {
 extern unsigned full_inspections;
-// This headless test must never fall through to network I/O.
-HttpResponse https_request(const std::string&,const std::string&,const std::vector<std::string>&,
-    const std::string&,const std::string&,size_t) { throw std::runtime_error("Unexpected network request"); }
-HttpResponse https_download(const std::string&,int,const std::string&,size_t) { throw std::runtime_error("Unexpected download"); }
 }
 int main(int argc,char** argv) {
     assert(argc==3);
@@ -27,8 +23,10 @@ int main(int argc,char** argv) {
         std::ofstream bad(config.root+"/session.json"); bad<<"{bad";
     }
     int requests=0; bool fail_progress=false;
-    config.transport=[&](const std::string& url,const std::string&,const std::vector<std::string>&,
-        const std::string&,const std::string&,size_t) {
+    const std::atomic<bool>* expected_cancel=nullptr;
+    config.transport.request=[&](const std::string& url,const std::string&,const std::vector<std::string>&,
+        const std::string&,const std::string&,size_t,const std::atomic<bool>& token) {
+        assert(&token==expected_cancel);
         ++requests;
         if(url.find("type=configs")!=std::string::npos) {
             HttpResponse r; r.status=fail_progress?503:200; r.body=R"({"configs":[]})"; return r;
@@ -40,7 +38,10 @@ int main(int argc,char** argv) {
         response.body=R"({"access_token":"dummy-access","refresh_token":"dummy-refresh","expires_at":9999999999,"user":{"id":"fixture-user"}})";
         return response;
     };
-    ApplicationService service(config); std::atomic<bool> cancel{false};
+    config.transport.download=[](const std::string&,int,const std::string&,size_t,const std::atomic<bool>&) -> HttpResponse {
+        throw std::runtime_error("Unexpected download");
+    };
+    ApplicationService service(config); std::atomic<bool> cancel{false}; expected_cancel=&cancel;
     auto result=service.execute(Request{},cancel);
     assert(result.outcome==Outcome::SessionInvalid && result.library.initialized && !result.library.signed_in);
     Request request; request.command=Command::SignIn; request.email="test"; request.password="test";
@@ -75,7 +76,7 @@ int main(int argc,char** argv) {
     fail_progress=false; request.command=Command::ReadOffline;
     State standalone_state(config.root+"/state.db");
     Cloud standalone_cloud(config.root+"/session.json",config.ca,config.public_key,
-        "https://auth.test","https://api.test",config.transport);
+        "https://auth.test","https://api.test",config.transport.bind_request(cancel));
     standalone_cloud.load_session();
     const auto managed=standalone_state.books("fixture-user").at(0);
     full_inspections=0;
@@ -103,8 +104,17 @@ int main(int argc,char** argv) {
     const auto before_refresh=requests;
     request.command=Command::Refresh; result=service.execute(request,cancel);
     assert(result.outcome==Outcome::Refreshed && requests==before_refresh+2);
+    // A fresh operation token replaces the previous one, including after failure.
+    std::atomic<bool> next_cancel{false}; expected_cancel=&next_cancel;
+    request.command=Command::Refresh; result=service.execute(request,next_cancel);
+    assert(result.outcome==Outcome::Refreshed);
+    expected_cancel=&cancel;
     request.command=Command::SignOut; result=service.execute(request,cancel);
     assert(result.outcome==Outcome::SignedOut && !result.library.signed_in && result.library.books.empty());
-    assert(access(local.c_str(),F_OK)==0 && requests==before_refresh+2);
+    assert(access(local.c_str(),F_OK)==0 && requests==before_refresh+4);
+    config.transport.download={};
+    bool incomplete_rejected=false;
+    try { ApplicationService incomplete(config); } catch(const std::invalid_argument&) { incomplete_rejected=true; }
+    assert(incomplete_rejected);
     std::cout<<"Headless application session recovery, identity, EPUB reuse, offline open and cancellation checks passed.\n";
 }

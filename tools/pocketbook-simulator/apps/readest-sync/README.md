@@ -50,3 +50,27 @@ The real-mode test sends fake credentials (including symbols and Unicode) throug
 the production HTTPS client to an isolated local TLS server. It checks routing,
 CA validation, downloads and session isolation. It does not establish that a
 particular live account can authenticate, or test browser keyboard translation.
+
+## Transport tests
+
+Each application selects one `HttpTransport` for requests, downloads and covers.
+The real adapter uses the production HTTPS client; `MockCloud` owns its fixture
+state and fault settings. Cancellation is passed per operation. The overlay
+shares its mock instance with the application, and cloud-mode switching still
+restarts the simulator with a separate storage profile.
+
+The `mock-cloud` CTest check runs authentication, library refresh, covers,
+downloads and progress synchronization without a GUI application or display.
+It also checks isolated instances, persisted remote progress and cancellation.
+The mock uses Qt Core. Cover artwork is generated at build time using Qt Gui,
+so the headless test can load the same PNG/JPEG bytes as the simulator.
+
+Run all simulator checks with:
+
+```sh
+docker compose run --rm simulator sh -ec '
+  cmake -S apps/readest-sync -B build/readest-sync/simulator -DPOCKETBOOK_SIMULATOR=ON -DCMAKE_BUILD_TYPE=Debug
+  cmake --build build/readest-sync/simulator -j2
+  ctest --test-dir build/readest-sync/simulator --output-on-failure
+'
+```

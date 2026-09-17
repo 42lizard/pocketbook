@@ -7,6 +7,7 @@ import ssl
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 
 APP = Path(__file__).resolve().parents[1]
@@ -33,12 +34,30 @@ class TransportTests(unittest.TestCase):
         cls.requests = []
 
         class Handler(http.server.BaseHTTPRequestHandler):
+            def handle(self):
+                try:
+                    super().handle()
+                except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+                    # Cancellation and rejected TLS handshakes close the peer.
+                    pass
+
             def log_message(self, *args):
                 pass
 
             def do_GET(self):
                 cls.requests.append((self.path, self.headers.get('Authorization'), b''))
-                if self.path == '/redirect':
+                if self.path == '/slow':
+                    self.send_response(200)
+                    self.send_header('Content-Length', str(100 * 1024))
+                    self.end_headers()
+                    try:
+                        for _ in range(100):
+                            self.wfile.write(b'x' * 1024)
+                            self.wfile.flush()
+                            time.sleep(0.05)
+                    except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+                        pass
+                elif self.path == '/redirect':
                     self.send_response(302)
                     self.send_header('Location', '/must-not-follow')
                     self.send_header('Content-Length', '0')
@@ -111,6 +130,12 @@ class TransportTests(unittest.TestCase):
 
         self.assertIn('Cancelled.', result.stderr)
         self.assertEqual(len(self.requests), before)
+
+    def test_cancel_active_request_and_download_then_reuse_adapter(self):
+        for mode in ['LATE_CANCEL_GET', 'LATE_CANCEL_DOWNLOAD']:
+            result = self.run_request('/slow', mode, limit=200000)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, 'Cancelled active transfer; next operation succeeded.')
 
     def test_download_limit_and_truncation_fail(self):
         for path, limit in [('/large', 64), ('/truncated', 4096)]:

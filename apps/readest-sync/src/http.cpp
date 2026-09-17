@@ -7,14 +7,10 @@
 #include <cerrno>
 #include <unistd.h>
 
-#ifdef READEST_SIMULATOR_TRANSPORT
-namespace readest::live {
-#else
 namespace readest {
-#endif
 namespace {
-thread_local const std::atomic<bool>* cancellation = nullptr;
-int progress(void*, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+int progress(void* context, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+    const auto* cancellation=static_cast<const std::atomic<bool>*>(context);
     return cancellation && cancellation->load() ? 1 : 0;
 }
 struct Buffer { std::string data; size_t limit; size_t bytes = 0; int fd = -1; };
@@ -44,11 +40,10 @@ bool controls(const std::string& value) {
 }
 }
 
-void set_http_cancellation(const std::atomic<bool>* cancel) { cancellation = cancel; }
 static HttpResponse transfer(const std::string& url, const std::string& method,
                            const std::vector<std::string>& headers,
                            const std::string& body, const std::string& ca_bundle,
-                           size_t max_response, int fd) {
+                           size_t max_response, int fd, const std::atomic<bool>* cancellation=nullptr) {
     if(cancellation && cancellation->load()) throw std::runtime_error("Cancelled.");
     const auto authority_end = url.find_first_of("/?#", 8);
     if (url.compare(0, 8, "https://") != 0 || controls(url) ||
@@ -81,6 +76,7 @@ static HttpResponse transfer(const std::string& url, const std::string& method,
     SET(CURLOPT_NOSIGNAL, 1L);
     SET(CURLOPT_NOPROGRESS, 0L);
     SET(CURLOPT_XFERINFOFUNCTION, progress);
+    SET(CURLOPT_XFERINFODATA, cancellation);
     SET(CURLOPT_CONNECTTIMEOUT, 15L);
     SET(CURLOPT_TIMEOUT, fd < 0 ? 60L : 1800L);
     SET(CURLOPT_LOW_SPEED_LIMIT, 16L);
@@ -133,5 +129,17 @@ HttpResponse https_request(const std::string& url, const std::string& method,
 HttpResponse https_download(const std::string& url, int fd, const std::string& ca, size_t max_bytes) {
     if (fd < 0) throw std::runtime_error("Invalid download file");
     return transfer(url, "GET", {}, "", ca, max_bytes, fd);
+}
+HttpTransport https_transport() {
+    HttpTransport transport;
+    transport.request=[](const std::string& url,const std::string& method,const std::vector<std::string>& headers,
+        const std::string& body,const std::string& ca,size_t cap,const std::atomic<bool>& cancel) {
+        return transfer(url,method,headers,body,ca,cap,-1,&cancel);
+    };
+    transport.download=[](const std::string& url,int fd,const std::string& ca,size_t cap,const std::atomic<bool>& cancel) {
+        if(fd<0) throw std::runtime_error("Invalid download file");
+        return transfer(url,"GET",{},"",ca,cap,fd,&cancel);
+    };
+    return transport;
 }
 } // namespace readest

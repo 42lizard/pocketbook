@@ -43,11 +43,10 @@ void OperationRunner::launch() {
     try {
         auto task=std::move(task_); task_=nullptr;
         worker_=std::thread([this,task=std::move(task)] {
-            set_http_cancellation(&cancelled_);
             try { result_=task(cancelled_); }
             catch(const std::exception& e) { result_.outcome=Outcome::Failed; result_.error=e.what(); }
             catch(...) { result_.outcome=Outcome::Failed; result_.error="Operation failed."; }
-            set_http_cancellation(nullptr); done_=true;
+            done_=true;
         });
     } catch(const std::exception& e) { result_.outcome=Outcome::Failed; result_.error=e.what(); done_=true; }
 }

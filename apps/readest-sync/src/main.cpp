@@ -31,7 +31,11 @@ static int runApp(int argc,char** argv) {
 #endif
     app.setFont(QFont(platform::fontFamily()));
     QImageReader::setAllocationLimit(32);
-    AppController controller;
+    auto config=deviceApplicationConfig();
+#ifdef READEST_SIMULATOR
+    config.transport=simulator.transport();
+#endif
+    AppController controller(config,deviceAccess());
     QQmlApplicationEngine engine;
 #ifdef READEST_DESKTOP
     engine.addImportPath(QStringLiteral(READEST_TEST_CONTROLS));

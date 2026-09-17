@@ -45,11 +45,12 @@ int main(int argc,char** argv) {
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
     QGuiApplication app(argc,argv);
     Simulator sim; sim.prepare();
-    auto config=deviceApplicationConfig();
+    auto config=deviceApplicationConfig(); config.transport=sim.transport();
+    std::atomic<bool> cancelled{false};
     auto device=deviceAccess(); device.connectionTimeoutMs=500;
     AppController control(config,device);
     const auto root=config.root,books_root=config.books_root,database=config.database;
-    Cloud observer(root+"/observer-session.json",config.ca,config.public_key);
+    Cloud observer(root+"/observer-session.json",config.ca,config.public_key,config.auth_origin,config.api_origin,config.transport.bind_request(cancelled));
     BookId chosen;
     auto pick=[&](int row) { chosen=control.library()->at(row).id; control.selectBook(QString::fromStdString(chosen.account),QString::fromStdString(chosen.hash)); };
     auto current=[&]() -> const LibraryEntry& { const auto* entry=control.library()->find(chosen); assert(entry); return *entry; };
@@ -76,17 +77,17 @@ int main(int argc,char** argv) {
         const auto url=qEnvironmentVariable("SIM_TEST_URL").toStdString();
         const auto certificate=qEnvironmentVariable("SIM_TEST_CA").toStdString();
         assert(!url.empty() && !certificate.empty());
-        Cloud local(root+"/local-test-session.json",certificate,"test-key",url,url);
+        Cloud local(root+"/local-test-session.json",certificate,"test-key",url,url,config.transport.bind_request(cancelled));
         sim.transfer(2); // Mock fault controls cannot replace real requests.
         local.sign_in("demo+ä@example.test","Test@+ü!#",time(nullptr));
         assert(local.session().user_id=="local-test-user");
         assert(fetch_library_page(local,0,100,time(nullptr)).books.empty());
         const auto downloaded=root+"/transport-download";
         const int fd=::open(downloaded.c_str(),O_CREAT|O_EXCL|O_WRONLY,0600); assert(fd>=0);
-        auto response=https_download(url+"/download",fd,certificate,100); ::close(fd);
+        auto response=config.transport.download(url+"/download",fd,certificate,100,cancelled); ::close(fd);
         assert(response.status==200 && response.bytes==18);
         bool rejected=false;
-        try { https_request(url,"GET",{},"",root+"/missing-ca",100); }
+        try { config.transport.request(url,"GET",{},"",root+"/missing-ca",100,cancelled); }
         catch(const std::exception&) { rejected=true; }
         assert(rejected);
         const auto book=QString::fromStdString(books_root)+"/real-download.epub";
@@ -126,12 +127,11 @@ int main(int argc,char** argv) {
     sim.transfer(0);
     // A cancelled slow transfer never reaches the fixture response.
     sim.transfer(1);
-    std::atomic<bool> cancelled{true};
-    set_http_cancellation(&cancelled);
+    cancelled=true;
     bool cancellation_observed=false;
     try { observer.get("/api/sync?type=books&since=0",time(nullptr)); }
     catch(const std::exception& error) { cancellation_observed=std::string(error.what())=="Cancelled."; }
-    set_http_cancellation(nullptr); sim.transfer(0); assert(cancellation_observed);
+    cancelled=false; sim.transfer(0); assert(cancellation_observed);
     // Both transfer failures must leave no installed book or partial directory.
     pick(0);
     for(int mode:{3,4}) {
@@ -216,7 +216,7 @@ int main(int argc,char** argv) {
     if(!output.isEmpty()) assert(window->grabWindow().save(output+"-simulator-controls.png"));
     // Unknown origins never reach a real network transport.
     bool blocked=false;
-    try { https_request("https://example.com","GET",{},"","",1000); }
+    try { config.transport.request("https://example.com","GET",{},"","",1000,cancelled); }
     catch(const std::exception&) { blocked=true; }
     assert(blocked && !warnings);
     const auto mockSession=root+"/session.json";

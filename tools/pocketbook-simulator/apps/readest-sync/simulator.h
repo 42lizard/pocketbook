@@ -1,5 +1,6 @@
 #pragma once
 #include "device.h"
+#include "mock_cloud.h"
 #include <QString>
 
 class QQmlApplicationEngine;
@@ -15,6 +16,7 @@ public:
     Simulator();
     ~Simulator() override;
     void prepare();
+    readest::HttpTransport transport() const;
     void attach(QQmlApplicationEngine&, AppController&);
     QString readerPath() const { return path_; }
     int chapter() const { return chapter_; }
@@ -27,6 +29,7 @@ public:
     Q_INVOKABLE void remoteChapter(int chapter);
 private:
     void saveChapter();
+    std::shared_ptr<MockCloud> mock_;
     QString path_, lastHash_;
     int chapter_=1;
     AppController* controller_=nullptr;

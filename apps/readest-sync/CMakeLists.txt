@@ -31,13 +31,8 @@ else()
            "${POCKETBOOK_TARGET_LIB_DIR}/libjson-c.a")
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../build/readest-sync")
 endif()
-set(HTTP_SOURCE src/http.cpp)
-if(READEST_SIMULATOR)
-  # Simulator routes requests to fixtures or the separately compiled HTTPS client.
-  set(HTTP_SOURCE "")
-endif()
 add_library(readest-core STATIC
-  src/application.cpp src/cloud.cpp src/download.cpp ${HTTP_SOURCE} src/integrity.cpp src/library.cpp
+  src/application.cpp src/cloud.cpp src/download.cpp src/http.cpp src/integrity.cpp src/library.cpp
   src/position.cpp src/probe.cpp src/progress.cpp src/state.cpp src/sync.cpp
   src/vendor/miniz/miniz.c)
 target_compile_definitions(readest-core PUBLIC MINIZ_NO_DEFLATE_APIS MINIZ_NO_ZLIB_APIS)
