@@ -65,7 +65,8 @@ void LibraryModel::filter(int value) {
 }
 void LibraryModel::setCapacity(int value) {
     if(value<1 || value>100 || value==capacity_) return;
-    beginResetModel(); capacity_=value; page_=0; rebuild(); endResetModel(); emit navigationChanged();
+    const auto anchor=page_*capacity_;
+    beginResetModel(); capacity_=value; page_=anchor/capacity_; rebuild(); endResetModel(); emit navigationChanged();
 }
 void LibraryModel::turnPage(int direction) {
     const auto next=std::max(0,std::min(pages()-1,page_+(direction<0?-1:1)));

@@ -115,7 +115,7 @@ int main(int argc,char** argv) {
     assert(control.signedIn());
     observer.sign_in("demo@example.test","demo",time(nullptr));
     action(control,"Refresh library");
-    assert(control.library()->entries().size()==51 && control.library()->pages()==9);
+    assert(control.library()->entries().size()==51 && control.library()->pages()==7);
     settle(1500); // Only the visible covers load after the metadata refresh completes.
     assert(!control.library()->at(0).cover.empty());
     sim.network(3); control.refreshLibrary(); assert(control.busy()); finish(control);
@@ -202,13 +202,24 @@ int main(int argc,char** argv) {
     auto* overlay=window->findChild<QQuickItem*>("simulatorOverlay"); assert(overlay);
     auto* panel=overlay->findChild<QQuickItem*>("simulatorPanel"); assert(panel);
     panel->setVisible(false);
+    auto* libraryPage=window->findChild<QObject*>("nativeLibraryPage"); assert(libraryPage);
+    assert(sim.readerPath().isEmpty());
+    libraryPage->setProperty("menuOpen",true); sim.button(Qt::Key_Back); settle();
+    assert(!libraryPage->property("menuOpen").toBool());
+    for(int i=0;i<13;++i) control.turnPage(-1);
+    sim.button(Qt::Key_PageDown); settle(); assert(control.library()->page()==2);
+    const auto rotation_anchor=control.library()->at(0).id;
     const auto output=qEnvironmentVariable("READEST_UI_PREVIEW");
     for(bool wide:{false,true}) {
         if(wide) sim.rotate();
         settle();
-        assert(control.library()->pages()==(wide?13:9));
-        for(int i=0;i<13;++i) control.turnPage(1);
-        settle();
+        assert(control.library()->pages()==(wide?9:7));
+        if(wide) {
+            bool anchor_visible=false;
+            for(int row=0;row<control.library()->rowCount();++row)
+                if(control.library()->at(row).id==rotation_anchor) anchor_visible=true;
+            assert(anchor_visible);
+        }
         auto picture=window->grabWindow(); assert(!picture.isNull());
         if(!output.isEmpty()) assert(picture.save(output+(wide?"-simulator-landscape.png":"-simulator-portrait.png")));
     }

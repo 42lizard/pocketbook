@@ -30,10 +30,9 @@ static void finish(AppController& control) {
     while(control.busy() && timer.elapsed()<5000) settle(10);
     assert(!control.busy());
 }
-static int check_progress_layout(QQuickItem* item) {
-    int count=0;
-    if(item->objectName()=="bookProgress") { assert(item->y()+item->height()<=item->parentItem()->height()+1); ++count; }
-    for(auto* child:item->childItems()) count+=check_progress_layout(child);
+static int count_named(QQuickItem* item,const QString& name) {
+    int count=item->objectName()==name;
+    for(auto* child:item->childItems()) count+=count_named(child,name);
     return count;
 }
 static ApplicationConfig configAt(const QString& base) {
@@ -294,7 +293,11 @@ int main(int argc,char** argv) {
     control.setAvailabilityFilter(3); assert(model->count()==25);
     control.setAvailabilityFilter(0); assert(model->count()==51);
     control.setPageCapacity(4); assert(model->rowCount()==4 && model->pages()==13);
+    control.turnPage(1); const auto rotation_anchor=model->at(0).id;
     control.setPageCapacity(6);
+    bool anchor_visible=false;
+    for(int row=0;row<model->rowCount();++row) if(model->at(row).id==rotation_anchor) anchor_visible=true;
+    assert(anchor_visible);
     // The model finds the same identity after reorder; presentation data does no I/O.
     LibraryModel independent;
     auto reversed=model->entries(); std::reverse(reversed.begin(),reversed.end()); independent.replace(reversed);
@@ -377,11 +380,25 @@ int main(int argc,char** argv) {
         window->resize(wide?1800:1404,wide?1404:1800); settle();
         for(int i=0;i<13;++i) { control.turnPage(1); settle(10); }
         for(int i=0;i<13;++i) { control.turnPage(-1); settle(10); }
-        assert(check_progress_layout(window->contentItem())==(wide?4:6));
+        assert(control.library()->rowCount()==(wide?6:8));
+        assert(count_named(window->contentItem(),"detailedBookRow")==control.library()->rowCount());
         auto picture=window->grabWindow(); assert(!picture.isNull());
         if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
             assert(picture.save(output+(wide?"-landscape.png":"-portrait.png")));
     }
+    auto* libraryPage=window->findChild<QObject*>("nativeLibraryPage"); assert(libraryPage);
+    libraryPage->setProperty("menuOpen",true); settle();
+    assert(window->findChild<QQuickItem*>("nativeLibraryMenu")->isVisible());
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
+    assert(!libraryPage->property("menuOpen").toBool());
+    QMetaObject::invokeMethod(libraryPage,"runMenuAction",Q_ARG(QVariant,QVariant(0))); settle();
+    assert(libraryPage->property("searchOpen").toBool() && window->findChild<QObject*>("searchInput"));
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
+    assert(!libraryPage->property("searchOpen").toBool());
+    QMetaObject::invokeMethod(libraryPage,"runMenuAction",Q_ARG(QVariant,QVariant(1))); settle();
+    assert(libraryPage->property("filterMenuOpen").toBool() && window->findChild<QQuickItem*>("nativeFilterMenu")->isVisible());
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
+    assert(!libraryPage->property("filterMenuOpen").toBool());
     control.selectBook("fixture-user",QString::fromStdString(first_hash)); settle();
     assert(control.actions().size()==5); control.back();
     cover_scenario=true;
