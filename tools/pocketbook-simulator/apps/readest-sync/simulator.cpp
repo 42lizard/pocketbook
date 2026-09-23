@@ -124,6 +124,8 @@ void Simulator::attach(QQmlApplicationEngine& engine,AppController& controller) 
         if(!path_.isEmpty()) {
             if(key==Qt::Key_Back) closeReader();
             else turnReader(key==Qt::Key_PageUp?-1:1);
+        } else if(auto* prototype=window_->findChild<QObject*>("completePrototype")) {
+            QMetaObject::invokeMethod(prototype,"hardwareButton",Q_ARG(QVariant,QVariant(key)));
         } else if(key==Qt::Key_Back) controller.back();
         else controller.turnPage(key==Qt::Key_PageUp?-1:1);
     };

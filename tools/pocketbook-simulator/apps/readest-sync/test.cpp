@@ -115,7 +115,7 @@ int main(int argc,char** argv) {
     assert(control.signedIn());
     observer.sign_in("demo@example.test","demo",time(nullptr));
     action(control,"Refresh library");
-    assert(control.library()->entries().size()==51 && control.library()->pages()==9);
+    assert(control.library()->entries().size()==51 && control.library()->pages()==7);
     settle(1500); // Only the visible covers load after the metadata refresh completes.
     assert(!control.library()->at(0).cover.empty());
     sim.network(3); control.refreshLibrary(); assert(control.busy()); finish(control);
@@ -202,15 +202,24 @@ int main(int argc,char** argv) {
     auto* overlay=window->findChild<QQuickItem*>("simulatorOverlay"); assert(overlay);
     auto* panel=overlay->findChild<QQuickItem*>("simulatorPanel"); assert(panel);
     panel->setVisible(false);
+    auto* prototype=window->findChild<QObject*>("completePrototype"); assert(prototype);
+    prototype->setProperty("screen",2); sim.button(Qt::Key_Back); settle();
+    assert(prototype->property("screen").toInt()==1);
+    for(int i=0;i<13;++i) control.turnPage(-1);
+    sim.button(Qt::Key_PageDown); settle(); assert(control.library()->page()==2);
+    prototype->setProperty("screen",6); sim.button(Qt::Key_Back); settle();
+    assert(prototype->property("screen").toInt()==6);
     const auto output=qEnvironmentVariable("READEST_UI_PREVIEW");
     for(bool wide:{false,true}) {
         if(wide) sim.rotate();
         settle();
-        assert(control.library()->pages()==(wide?13:9));
-        for(int i=0;i<13;++i) control.turnPage(1);
-        settle();
-        auto picture=window->grabWindow(); assert(!picture.isNull());
-        if(!output.isEmpty()) assert(picture.save(output+(wide?"-simulator-landscape.png":"-simulator-portrait.png")));
+        assert(control.library()->pages()==(wide?9:7));
+        for(int state=0;state<7;++state) {
+            prototype->setProperty("screen",state); settle();
+            auto picture=window->grabWindow(); assert(!picture.isNull());
+            if(!output.isEmpty())
+                assert(picture.save(output+QString("-simulator-%1-%2.png").arg(wide?"landscape":"portrait").arg(state)));
+        }
     }
     panel->setVisible(true); settle();
     if(!output.isEmpty()) assert(window->grabWindow().save(output+"-simulator-controls.png"));

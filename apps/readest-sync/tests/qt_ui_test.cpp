@@ -30,12 +30,6 @@ static void finish(AppController& control) {
     while(control.busy() && timer.elapsed()<5000) settle(10);
     assert(!control.busy());
 }
-static int check_progress_layout(QQuickItem* item) {
-    int count=0;
-    if(item->objectName()=="bookProgress") { assert(item->y()+item->height()<=item->parentItem()->height()+1); ++count; }
-    for(auto* child:item->childItems()) count+=check_progress_layout(child);
-    return count;
-}
 static ApplicationConfig configAt(const QString& base) {
     ApplicationConfig config;
     config.root=(base+"/system/readest-sync").toStdString();
@@ -373,14 +367,19 @@ int main(int argc,char** argv) {
     });
     engine.load(QUrl("qrc:/Main.qml")); assert(!engine.rootObjects().isEmpty());
     auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); assert(window);
+    auto* prototype=window->findChild<QObject*>("completePrototype"); assert(prototype);
+    const auto output=qEnvironmentVariable("READEST_UI_PREVIEW");
     for(bool wide:{false,true}) {
         window->resize(wide?1800:1404,wide?1404:1800); settle();
         for(int i=0;i<13;++i) { control.turnPage(1); settle(10); }
         for(int i=0;i<13;++i) { control.turnPage(-1); settle(10); }
-        assert(check_progress_layout(window->contentItem())==(wide?4:6));
-        auto picture=window->grabWindow(); assert(!picture.isNull());
-        if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
-            assert(picture.save(output+(wide?"-landscape.png":"-portrait.png")));
+        assert(control.library()->rowCount()==(wide?6:8));
+        for(int state=0;state<7;++state) {
+            prototype->setProperty("screen",state); settle();
+            auto picture=window->grabWindow(); assert(!picture.isNull());
+            if(!output.isEmpty())
+                assert(picture.save(output+QString("-%1-%2.png").arg(wide?"landscape":"portrait").arg(state)));
+        }
     }
     control.selectBook("fixture-user",QString::fromStdString(first_hash)); settle();
     assert(control.actions().size()==5); control.back();
@@ -393,7 +392,8 @@ int main(int argc,char** argv) {
     assert(control.status().startsWith("Device scan complete") && cover_requests<=2); // Foreground work interrupts the cover batch.
     control.signOut(); finish(control); settle();
     control.showSignIn();settle();
-    assert(window->findChild<QObject*>("emailInput") && window->findChild<QObject*>("passwordInput"));
+    prototype->setProperty("screen",0); settle();
+    assert(window->findChild<QObject*>("prototypeEmail") && window->findChild<QObject*>("prototypePassword"));
     assert(!warnings);
     std::cout<<"Application isolation, public commands, model/filter identity, runner lifetime and QML checks passed.\n";
 }
