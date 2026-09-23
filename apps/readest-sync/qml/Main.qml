@@ -47,6 +47,7 @@ Window {
     Component { id: busyPage; BusyPage { shell: window } }
     Component { id: errorPage; ErrorPage { shell: window } }
     Component { id: signInPage; SignInPage { shell: window } }
-    Component { id: libraryPage; LibraryPage { shell: window } }
+    // THROWAWAY PROTOTYPE: three native-library directions, switchable in-page.
+    Component { id: libraryPage; LibraryPrototypePage { shell: window } }
     Component { id: detailPage; BookDetailsPage { shell: window } }
 }
