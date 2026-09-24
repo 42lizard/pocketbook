@@ -102,6 +102,19 @@ QString AppController::hint() const {
     text+="\nPocketBook: "+percentageLabel(entry->local_percentage)+" · Readest: "+percentageLabel(entry->remote_percentage);
     return text+"\nPercentages use each reader’s page counts. — means unavailable.";
 }
+QVariantMap AppController::book() const {
+    const auto* entry=library_.find(selected_); if(!entry) return {};
+    auto availability=entry->book.book.deleted?QStringLiteral("Removed from Readest"):
+        entry->upload_pending?QStringLiteral("Upload pending"):
+        entry->book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry->availability);
+    if(entry->availability==Availability::OnDevice && entry->book.epubs==0)
+        availability=QStringLiteral("On device · Readest progress only");
+    return {{"title",QString::fromStdString(entry->book.book.title.empty()?"Untitled":entry->book.book.title)},
+        {"author",QString::fromStdString(entry->book.book.author)},
+        {"availability",availability},{"coverPath",QString::fromStdString(entry->cover)},
+        {"pocketBookProgress",percentageLabel(entry->local_percentage)},
+        {"readestProgress",percentageLabel(entry->remote_percentage)}};
+}
 QVariantList AppController::actions() const {
     QVariantList result;
     if(busy()) return result;
@@ -115,6 +128,17 @@ QVariantList AppController::actions() const {
         }
         add("back","Back to library");return result;
     }
+    if(choice_==ChoiceState::OpenConflict) {
+        add("openPocketBook","Open at PocketBook position"); add("openReadest","Open at Readest position");
+        add("back","Back to library"); return result;
+    }
+    if(choice_==ChoiceState::SyncConflict) {
+        add("usePocketBook","Use PocketBook position"); add("useReadest","Use Readest position");
+        add("back","Back to library"); return result;
+    }
+    if(entry->upload_pending && signed_in_) {
+        add("upload","Retry upload / reading position"); add("back","Back to library"); return result;
+    }
     if(entry->book.local_only || entry->book.book.deleted || !signed_in_) {
         add("offline","Open at PocketBook position");
         if(signed_in_) add("upload",entry->book.book.deleted?"Re-upload to Readest":entry->upload_pending?"Retry upload":"Upload to Readest");
@@ -122,22 +146,16 @@ QVariantList AppController::actions() const {
         if(entry->book.copies.size()>1) add("copies","Choose local copy");
         add("back","Back to library");return result;
     }
-    if(entry->upload_pending) add("upload","Retry upload / reading position");
     if(entry->book.copies.size()>1) add("copies","Choose local copy");
-    if(choice_==ChoiceState::OpenConflict && entry->availability==Availability::OnDevice) {
-        add("openPocketBook","Open at PocketBook position"); add("openReadest","Open at Readest position");
-    } else if(entry->availability==Availability::OnDevice) {
+    if(entry->availability==Availability::OnDevice) {
         add("open",entry->sync.pending_remote.empty()?"Open":"Open at Readest position");
         add("sync","Sync now"); add("offline","Read offline");
-    } else if(entry->availability==Availability::Downloadable || entry->availability==Availability::Unknown) add("download","Download EPUB");
+    } else if(entry->availability==Availability::Downloadable) add("download","Download EPUB");
     else add("refresh","Check availability");
-    if(!entry->upload_pending && entry->availability==Availability::OnDevice && entry->book.epubs==0)
+    if(entry->availability==Availability::OnDevice && entry->book.epubs==0)
         add("upload","Upload EPUB to Readest");
     if(entry->availability==Availability::OnDevice && entry->book.epubs>0)
         add("uploadCover","Upload cover to Readest");
-    if(choice_==ChoiceState::SyncConflict) {
-        add("usePocketBook","Use PocketBook position"); add("useReadest","Use Readest position");
-    }
     add("back","Back to library"); return result;
 }
 void AppController::submit(Request request) {
@@ -206,7 +224,7 @@ void AppController::selectBook(const QString& account,const QString& hash) {
     const BookId id{account.toStdString(),hash.toStdString()};
     const auto* entry=library_.find(id); if(!entry) return;
     selected_=id; revision_=entry->sync.revision; choice_=ChoiceState::None;
-    status_=availabilityLabel(entry->availability)+". "+QString::fromStdString(entry->book.book.author); emit changed(); prepareCovers();
+    status_.clear(); emit changed(); prepareCovers();
 }
 void AppController::runAction(const QString& command) {
     if(busy()) return;
