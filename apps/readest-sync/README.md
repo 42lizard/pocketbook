@@ -401,6 +401,14 @@ placeholder; cover failures do not prevent library use or book downloads.
 The first cover refresh can take longer; Back cancels it. Cover files are limited
 to 2 MiB and four million pixels before decoding.
 
+List covers remain asynchronous. Their rendered PNG thumbnails are kept in the
+separate `system/readest-sync/cover-cache.db`, bounded to 8 MiB of image data and
+evicted by least-recent use. The key includes the account, book, source-cover
+version, requested size and rendering format. This database contains no sync or
+recovery state and can be deleted at any time; cache locks, corruption and write
+failures fall back to the original cover without blocking the library. Book
+details continue to render from the original cover.
+
 The storage contract follows Readest's
 [storage listing endpoint](https://github.com/readest/readest/blob/main/apps/readest-app/src/pages/api/storage/list.ts).
 Cloud covers use Qt's bounded `QImageReader` in an asynchronous image provider.
