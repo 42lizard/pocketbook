@@ -15,7 +15,7 @@ Window {
     property real buttonHeight: Math.max(48, height / 23)
     property bool resumeOnActivation: true
     property string signInNotice: ""
-    readonly property bool libraryActive: view.initialized && !view.busy && !view.signingIn && !view.detail
+    readonly property bool libraryActive: view.initialized && !view.signingIn && !view.detail
     onWidthChanged: appController.setPageCapacity(width > height ? 6 : 8)
     onHeightChanged: appController.setPageCapacity(width > height ? 6 : 8)
     onActiveChanged: if (active && resumeOnActivation) appController.resume()
@@ -53,8 +53,18 @@ Window {
         Loader {
             id: pageLoader
             anchors.fill: parent
-            sourceComponent: window.view.busy ? busyPage : !window.view.initialized ? errorPage :
+            sourceComponent: !window.view.initialized ? (window.view.busy ? busyPage : errorPage) :
                              window.view.signingIn ? signInPage : window.view.detail ? detailPage : libraryPage
+        }
+        OperationSurface {
+            anchors.fill: parent
+            visible: window.view.busy && window.view.initialized
+            shell: window
+        }
+        DecisionDialog {
+            anchors.fill: parent
+            visible: window.view.decision || window.view.blocking
+            shell: window
         }
     }
     Component { id: busyPage; BusyPage { shell: window } }

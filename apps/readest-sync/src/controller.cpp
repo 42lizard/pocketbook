@@ -17,7 +17,7 @@ QString baseResultMessage(const OperationResult& result) {
     const auto error=QString::fromStdString(result.error);
     if(!result.recovery_warning.empty()) return "Some downloads need attention: "+QString::fromStdString(result.recovery_warning);
     switch(result.outcome) {
-    case Outcome::Ready: return "Wi-Fi connects when needed. Downloaded books work offline.";
+    case Outcome::Ready: return {};
     case Outcome::SessionInvalid: return "Saved sign-in could not be loaded. Please sign in again.";
     case Outcome::SignedIn: return "Signed in. Choose Refresh library.";
     case Outcome::SignedOut: return "Signed out. Downloaded files are retained.";
@@ -94,6 +94,16 @@ QString AppController::title() const {
     const auto* entry=library_.find(selected_);
     return entry?QString::fromStdString(entry->book.book.title):QStringLiteral("Readest Sync");
 }
+bool AppController::blocking() const {
+    return blocking_state_!=BlockingState::None && selected_==blocking_book_ && !blocking_acknowledged_;
+}
+QString AppController::blockingMessage() const {
+    if(blocking_state_==BlockingState::AppliedUnrecorded)
+        return QStringLiteral("The reading position was applied, but Readest could not confirm the saved result. Sync again before opening.");
+    if(blocking_state_==BlockingState::NativeCommitUncertain)
+        return QStringLiteral("The PocketBook write could not be confirmed. Acknowledge this warning, then check the position again.");
+    return {};
+}
 QString AppController::hint() const {
     const auto* entry=library_.find(selected_); if(!entry) return {};
     auto text=(entry->book.book.deleted?QStringLiteral("Removed from Readest"):entry->book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry->availability))+". "+QString::fromStdString(entry->book.book.author);
@@ -120,6 +130,12 @@ QVariantList AppController::actions() const {
     if(busy()) return result;
     auto add=[&](const char* command,const QString& text) { result.append(QVariantMap{{"command",command},{"text",text}}); };
     const auto* entry=library_.find(selected_); if(!entry) return result;
+    if(blocking_state_!=BlockingState::None && selected_==blocking_book_) {
+        if(!blocking_acknowledged_) return result;
+        add(entry->availability==Availability::OnDevice?"sync":"refresh",
+            entry->availability==Availability::OnDevice?"Sync now":"Check availability");
+        add("back","Back to library"); return result;
+    }
     if(entry->book.needs_copy_choice || choice_==ChoiceState::LocalCopy) {
         for(size_t i=0;i<entry->book.copies.size();++i) {
             const auto& copy=entry->book.copies[i];
@@ -174,7 +190,7 @@ void AppController::submit(Request request) {
         return service->execute(request,cancel);
     },online,[this,context](OperationResult result) { complete(context,std::move(result)); },
     [this,message](bool connecting) { busy_message_=connecting?QStringLiteral("Connecting to Wi-Fi"):message; emit changed(); });
-    if(!started) { status_="The previous Wi-Fi connection is still finishing. Try again shortly."; emit changed(); }
+    if(!started) { status_="The previous Wi-Fi connection is still finishing. Try again shortly."; status_kind_="warning"; emit changed(); }
 }
 void AppController::complete(const Request& request,OperationResult result) {
     if(exiting_) { QCoreApplication::quit(); return; }
@@ -188,6 +204,19 @@ void AppController::complete(const Request& request,OperationResult result) {
         if(!library_.find(selected_)) selected_={};
     }
     status_=resultMessage(result);
+    const bool warning=result.outcome==Outcome::SessionInvalid || result.outcome==Outcome::UploadPending ||
+        result.outcome==Outcome::SyncUnavailable || result.outcome==Outcome::NeedsNativeSettings ||
+        result.outcome==Outcome::AppliedUnrecorded || result.outcome==Outcome::NativeCommitUncertain ||
+        result.outcome==Outcome::Failed || !result.metadata_error.empty() || !result.recovery_warning.empty() ||
+        !result.progress_warning.empty();
+    status_kind_=status_.isEmpty()?QStringLiteral("none"):(warning?QStringLiteral("warning"):QStringLiteral("info"));
+    if(result.outcome==Outcome::AppliedUnrecorded || result.outcome==Outcome::NativeCommitUncertain) {
+        blocking_book_=request.book; blocking_acknowledged_=false;
+        blocking_state_=result.outcome==Outcome::AppliedUnrecorded?BlockingState::AppliedUnrecorded:BlockingState::NativeCommitUncertain;
+        status_=blockingMessage();
+    } else if(request.command==Command::Sync && request.book==blocking_book_ && result.outcome!=Outcome::Failed) {
+        blocking_state_=BlockingState::None; blocking_book_={}; blocking_acknowledged_=false;
+    }
     if(request.command==Command::Sync || request.command==Command::Open || request.command==Command::Upload) {
         revision_=result.revision;
         choice_=result.sync_action==SyncAction::Conflict?
@@ -198,7 +227,7 @@ void AppController::complete(const Request& request,OperationResult result) {
     if(!result.open_path.empty()) {
         reader_opened_=true;
         if(!device_.open(QString::fromStdString(result.open_path))) {
-            reader_opened_=false; status_="The native reader could not open this book."; emit changed();
+            reader_opened_=false; status_="The native reader could not open this book."; status_kind_="warning"; emit changed();
         }
     }
 }
@@ -211,11 +240,11 @@ void AppController::prepareCovers() {
 void AppController::initialize() { if(!initialized_) submit(Request{}); }
 void AppController::signIn(const QString& email,const QString& password) {
     if(busy() || !initialized_ || signed_in_) return;
-    if(email.trimmed().isEmpty() || password.isEmpty()) { status_="Enter both your email and password first."; emit changed(); return; }
-    if(email.trimmed().toUtf8().size()>=256 || password.toUtf8().size()>=1024) { status_="Email or password is too long."; emit changed(); return; }
+    if(email.trimmed().isEmpty() || password.isEmpty()) { status_="Enter both your email and password first."; status_kind_="warning"; emit changed(); return; }
+    if(email.trimmed().toUtf8().size()>=256 || password.toUtf8().size()>=1024) { status_="Email or password is too long."; status_kind_="warning"; emit changed(); return; }
     Request request; request.command=Command::SignIn; request.email=email.trimmed().toStdString(); request.password=password.toStdString(); submit(std::move(request));
 }
-void AppController::showSignIn() { if(!busy() && !signed_in_) { signing_in_=true;emit changed();prepareCovers(); } }
+void AppController::showSignIn() { if(!busy() && !signed_in_) { signing_in_=true;status_.clear();status_kind_="none";emit changed();prepareCovers(); } }
 void AppController::signOut() { if(!signed_in_) return; covers_.resetSession(""); Request r; r.command=Command::SignOut; submit(r); }
 void AppController::refreshLibrary() { if(!signed_in_) { scanDevice(); return; } Request r; r.command=Command::Refresh; submit(r); }
 void AppController::scanDevice() { Request r; r.command=Command::Scan; submit(r); }
@@ -224,7 +253,13 @@ void AppController::selectBook(const QString& account,const QString& hash) {
     const BookId id{account.toStdString(),hash.toStdString()};
     const auto* entry=library_.find(id); if(!entry) return;
     selected_=id; revision_=entry->sync.revision; choice_=ChoiceState::None;
-    status_.clear(); emit changed(); prepareCovers();
+    status_=id==blocking_book_?blockingMessage():QString(); status_kind_=status_.isEmpty()?"none":"warning"; emit changed(); prepareCovers();
+}
+void AppController::cancelDecision() {
+    if(!busy() && decision()) { choice_=ChoiceState::None; emit changed(); }
+}
+void AppController::acknowledgeBlocking() {
+    if(blocking()) { blocking_acknowledged_=true; emit changed(); }
 }
 void AppController::runAction(const QString& command) {
     if(busy()) return;
@@ -254,6 +289,8 @@ void AppController::setAvailabilityFilter(int value) { if(!busy()) library_.filt
 void AppController::setPageCapacity(int value) { library_.setCapacity(value); }
 void AppController::turnPage(int direction) { if(!busy() && !detail()) library_.turnPage(direction); }
 void AppController::back() {
+    if(blocking()) return;
+    if(decision()) { cancelDecision(); return; }
     if(busy()) close();
     else if(signing_in_) {signing_in_=false;emit changed();prepareCovers();}
     else if(detail()) { selected_={}; choice_=ChoiceState::None; emit changed(); prepareCovers(); }
