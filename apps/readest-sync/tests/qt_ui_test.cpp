@@ -221,10 +221,16 @@ int main(int argc,char** argv) {
     QGuiApplication app(argc,argv); runnerChecks();
     QTemporaryDir temp; assert(temp.isValid());
     auto config=configAt(temp.path());
-    std::atomic<int> cover_requests{0}; bool cover_scenario=false;
+    std::atomic<int> cover_requests{0};
+    std::atomic<bool> hold_foreground{false};
+    bool cover_scenario=false;
     const auto transport=config.transport.request;
     config.transport.request=[&](const std::string& url,const std::string& method,const std::vector<std::string>& headers,
         const std::string& body,const std::string& ca,size_t cap,const std::atomic<bool>& cancel) {
+        if(hold_foreground && url.find("/api/sync?")!=std::string::npos) {
+            while(hold_foreground && !cancel.load()) QThread::msleep(1);
+            if(cancel.load()) throw std::runtime_error("Cancelled.");
+        }
         if(cover_scenario) {
             HttpResponse r; r.status=200;
             if(url.find("/api/sync?")!=std::string::npos) { r.body=R"({"books":[]})"; return r; }
@@ -393,6 +399,14 @@ int main(int argc,char** argv) {
             assert(picture.save(output+(wide?"-landscape.png":"-portrait.png")));
     }
     auto* libraryPage=window->findChild<QObject*>("nativeLibraryPage"); assert(libraryPage);
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
+    assert(libraryPage->property("menuOpen").toBool());
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
+    assert(!libraryPage->property("menuOpen").toBool());
+    hold_foreground=true; control.refreshLibrary(); settle(); assert(control.busy());
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
+    assert(!libraryPage->property("menuOpen").toBool());
+    hold_foreground=false; finish(control);
     libraryPage->setProperty("menuOpen",true); settle();
     assert(window->findChild<QQuickItem*>("nativeLibraryMenu")->isVisible());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
@@ -411,6 +425,10 @@ int main(int argc,char** argv) {
     auto* detailsPage=window->findChild<QObject*>("nativeBookDetailsPage"); assert(detailsPage);
     assert(window->findChild<QQuickItem*>("nativePrimaryAction")->isVisible());
     assert(detailsPage->property("hasMenu").toBool());
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
+    assert(detailsPage->property("menuOpen").toBool());
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
+    assert(!detailsPage->property("menuOpen").toBool());
     if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
         assert(window->grabWindow().save(output+"-detail-portrait.png"));
     QMetaObject::invokeMethod(detailsPage,"toggleMenu"); settle();
