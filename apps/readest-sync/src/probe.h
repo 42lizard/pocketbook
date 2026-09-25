@@ -36,8 +36,8 @@ void make_directory(const std::string& path);
 void snapshot_database(const std::string& source, const std::string& destination);
 
 // Explicit diagnostic write: fixed fixture identity and captured Readest BRAVO start only.
-// backup_directory must be a new, app-owned trial directory.
-void apply_readest_trial(const std::string& database, const std::string& backup_directory);
+// audit_directory must be a new, app-owned trial directory.
+void apply_readest_trial(const std::string& database, const std::string& audit_directory);
 
 struct NativeBook { std::string path, position; };
 // Short read-only transactions against the live firmware database. SQLite
@@ -66,7 +66,8 @@ std::map<std::string,double> native_percentages(const std::string& database,
 // SQLite's backup API gives one consistent snapshot while WAL is active.
 void backup_native_database(const std::string& source, const std::string& destination);
 // Call only for an explicit Open on a validated managed EPUB. Requires the same
-// state seen at reconciliation; retains a complete backup and touches two fields.
+// PocketBook reading position seen at reconciliation, records a small audit and
+// touches two fields.
 enum class NativeApplyStatus { Committed, Uncertain };
 struct NativeApplyResult {
     NativeApplyStatus status=NativeApplyStatus::Committed;
@@ -75,7 +76,7 @@ struct NativeApplyResult {
 // Pre-commit failures throw. Post-commit audit failure returns a warning;
 // an unconfirmed commit/rollback returns Uncertain, never a false no-write claim.
 // Cancellation is honored immediately before UPDATE; after mutation, finish commit.
-[[nodiscard]] NativeApplyResult apply_native_position(const std::string& database, const std::string& backup_directory,
+[[nodiscard]] NativeApplyResult apply_native_position(const std::string& database, const std::string& audit_directory,
                            const NativePosition& expected, const std::string& readest_cfi,
                            const std::string& model, const std::string& firmware,
                            const std::atomic<bool>* cancel=nullptr);
