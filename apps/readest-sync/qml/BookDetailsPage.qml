@@ -176,7 +176,7 @@ Item {
                     Text {
                         anchors { fill: parent; margins: shell.metrics.largeGap }
                         text: modelData.text
-                        color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.Wrap
@@ -198,7 +198,7 @@ Item {
         Text {
             anchors.fill: parent
             text: root.primaryAction ? root.primaryAction.text : ""
-            color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
             font.pixelSize: shell.metrics.bodyFont
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -229,7 +229,7 @@ Item {
                     Text {
                         anchors { fill: parent; margins: shell.metrics.largeGap }
                         text: modelData.text
-                        color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                     }

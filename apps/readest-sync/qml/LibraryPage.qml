@@ -78,7 +78,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "‹"
-                    color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                     font.pixelSize: shell.metrics.titleFont * 1.4
                 }
                 MouseArea {
@@ -104,7 +104,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "×"
-                    color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                     font.pixelSize: shell.metrics.titleFont
                 }
                 MouseArea {
@@ -135,7 +135,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "Clear"
-                    color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                     font.pixelSize: shell.metrics.smallFont
                 }
                 MouseArea { id: clearFilterTap; anchors.fill: parent; onClicked: shell.view.setAvailabilityFilter(0) }
@@ -266,7 +266,7 @@ Item {
             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
             width: shell.metrics.menuRow
             color: previousTap.pressed ? "black" : "white"
-            Text { anchors.centerIn: parent; text: "‹"; color: parent.color === "#000000" ? "white" : "black"; font.pixelSize: shell.metrics.titleFont }
+            Text { anchors.centerIn: parent; text: "‹"; color: Qt.colorEqual(parent.color, "black") ? "white" : "black"; font.pixelSize: shell.metrics.titleFont }
             MouseArea { id: previousTap; anchors.fill: parent; enabled: shell.view.library.page > 1; onClicked: shell.view.turnPage(-1) }
         }
         Column {
@@ -291,7 +291,7 @@ Item {
             anchors { right: parent.right; top: parent.top; bottom: parent.bottom }
             width: shell.metrics.menuRow
             color: nextTap.pressed ? "black" : "white"
-            Text { anchors.centerIn: parent; text: "›"; color: parent.color === "#000000" ? "white" : "black"; font.pixelSize: shell.metrics.titleFont }
+            Text { anchors.centerIn: parent; text: "›"; color: Qt.colorEqual(parent.color, "black") ? "white" : "black"; font.pixelSize: shell.metrics.titleFont }
             MouseArea { id: nextTap; anchors.fill: parent; enabled: shell.view.library.page < shell.view.library.pages; onClicked: shell.view.turnPage(1) }
         }
     }
@@ -322,7 +322,7 @@ Item {
                     Text {
                         anchors { fill: parent; leftMargin: shell.metrics.gap }
                         text: modelData
-                        color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -358,7 +358,7 @@ Item {
                     Text {
                         anchors { fill: parent; leftMargin: shell.metrics.gap; rightMargin: shell.metrics.gap }
                         text: (shell.view.library.availabilityFilter === index ? "✓  " : "") + modelData
-                        color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
@@ -399,7 +399,7 @@ Item {
                     Text {
                         anchors { fill: parent; leftMargin: shell.metrics.gap; rightMargin: shell.metrics.gap }
                         text: modelData
-                        color: parent.color === "#000000" ? "white" : "black"
+                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
