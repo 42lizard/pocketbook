@@ -41,6 +41,22 @@ public:
     Database& operator=(const Database&) = delete;
 };
 
+class ReadTransaction {
+    Database& database_;
+    bool active_ = true;
+public:
+    explicit ReadTransaction(Database& database):database_(database) {
+        if(sqlite3_exec(database_.db,"BEGIN",nullptr,nullptr,nullptr)!=SQLITE_OK)
+            throw std::runtime_error(sqlite3_errmsg(database_.db));
+    }
+    ~ReadTransaction() { if(active_) sqlite3_exec(database_.db,"ROLLBACK",nullptr,nullptr,nullptr); }
+    void commit() {
+        if(sqlite3_exec(database_.db,"COMMIT",nullptr,nullptr,nullptr)!=SQLITE_OK)
+            throw std::runtime_error(sqlite3_errmsg(database_.db));
+        active_=false;
+    }
+};
+
 template<class Visit>
 void query_each(Database& db, const char* sql, const std::vector<std::string>& params, Visit visit) {
     sqlite3_stmt* raw = nullptr;
@@ -285,8 +301,8 @@ std::vector<std::string> path_parameters(const std::string& path) {
     return {path.substr(slash+1),path.substr(0,slash)};
 }
 }
-std::vector<NativeBook> native_books(const std::string& snapshot) {
-    Database db(snapshot); std::vector<NativeBook> result;
+std::vector<NativeBook> native_books(const std::string& database) {
+    Database db(database); ReadTransaction transaction(db); std::vector<NativeBook> result;
     query_each(db,"SELECT d.name,f.filename,COALESCE(s.position,'') AS position FROM files f "
         "JOIN folders d ON d.id=f.folder_id AND d.storageid=f.storageid "
         "LEFT JOIN books_settings s ON s.bookid=f.book_id ORDER BY d.name,f.filename",{},[&](json_object* row) {
@@ -296,7 +312,7 @@ std::vector<NativeBook> native_books(const std::string& snapshot) {
         for(auto& c:suffix) if(c>='A' && c<='Z') c+=32;
         if(suffix==".epub") result.push_back({folder+"/"+name,field(row,"position")});
     });
-    return result;
+    transaction.commit(); return result;
 }
 NativePosition native_position(const std::string& snapshot, const std::string& book_path) {
     Database db(snapshot);
@@ -327,9 +343,9 @@ NativePosition native_position(const std::string& snapshot, const std::string& b
         throw UnsupportedNativePosition("Unsupported native saved position");
     return result;
 }
-std::map<std::string,double> native_percentages(const std::string& snapshot,
+std::map<std::string,double> native_percentages(const std::string& database,
                                                const std::vector<std::string>& paths) {
-    Database db(snapshot);
+    Database db(database); ReadTransaction transaction(db);
     std::map<std::string,double> result;
     const std::set<std::string> wanted(paths.begin(),paths.end());
     query_each(db,
@@ -348,7 +364,7 @@ std::map<std::string,double> native_percentages(const std::string& snapshot,
                 result[path]=std::min(current/total,1.0)*100;
         } catch(const std::exception&) { /* Unknown page count, not zero progress. */ }
     });
-    return result;
+    transaction.commit(); return result;
 }
 void backup_native_database(const std::string& path, const std::string& destination) {
     struct stat st;

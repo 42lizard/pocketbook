@@ -40,7 +40,9 @@ void snapshot_database(const std::string& source, const std::string& destination
 void apply_readest_trial(const std::string& database, const std::string& backup_directory);
 
 struct NativeBook { std::string path, position; };
-std::vector<NativeBook> native_books(const std::string& snapshot);
+// Short read-only transactions against the live firmware database. SQLite
+// provides a consistent committed view while the reader is writing in WAL mode.
+std::vector<NativeBook> native_books(const std::string& database);
 
 class UnsupportedNativePosition : public std::runtime_error {
 public:
@@ -55,9 +57,9 @@ struct NativePosition {
 // Read an app-owned snapshot after validating the managed EPUB bytes.
 // Missing settings require a normal first Open before applying remote progress.
 NativePosition native_position(const std::string& snapshot, const std::string& book_path);
-// Display-only page ratios from a read-only snapshot; independent of CFI support.
+// Display-only page ratios from the live database; independent of CFI support.
 // Missing or ambiguous profiles and invalid page counts are omitted.
-std::map<std::string,double> native_percentages(const std::string& snapshot,
+std::map<std::string,double> native_percentages(const std::string& database,
                                                const std::vector<std::string>& paths);
 // Transactionally copy the live database to a new app-owned file; source is
 // opened read-only and is never created. Unlike diagnostic filesystem copying,

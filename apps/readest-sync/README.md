@@ -366,8 +366,9 @@ requested limit of 1,000 rows. Responses remain capped at 4 MiB; an unresolved
 or oversized boundary reports an error without advancing the cursor.
 
 Each tile shows separate **PocketBook** and **Readest** reading percentages.
-PocketBook uses saved native page counts, read from a database snapshot at
-startup, after operations, and on return from the reader. Readest uses the
+PocketBook uses saved native page counts, read directly from the firmware
+database in a short read-only transaction at startup, after operations, and on
+return from the reader. Readest uses the
 latest cached library/config page counts; **Refresh library** updates its
 library values. `—` means no usable saved percentage is available. The readers
 paginate differently, so their percentages can differ at the same location.

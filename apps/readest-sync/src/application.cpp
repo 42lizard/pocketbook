@@ -39,34 +39,30 @@ void ApplicationService::check_cancel(const std::atomic<bool>& cancel) const {
 }
 size_t ApplicationService::scan(const std::atomic<bool>& cancel) {
     trace("scan.begin");
-    const auto file=config_.root+"/inventory-"+std::to_string(getpid())+"-"+std::to_string(++sequence_)+".db";
     std::vector<LocalCopy> copies;
-    try {
-        backup_native_database(config_.database,file);
-        std::map<std::string,LocalCopy> cached;
-        for(const auto& copy:state_->local_copies()) cached[copy.path]=copy;
-        std::set<std::string> seen;
-        for(const auto& native:native_books(file)) {
-            check_cancel(cancel);
-            if(!seen.insert(native.path).second) continue;
-            struct stat st;
-            if(lstat(native.path.c_str(),&st) || !S_ISREG(st.st_mode) || st.st_size<=0 || st.st_size>256LL*1024*1024) continue;
-            const auto stamp=epub_file_stamp(st);
-            LocalCopy copy;
-            const auto found=cached.find(native.path);
-            if(found!=cached.end() && found->second.stamp==stamp) copy=found->second;
-            else {
-                copy.path=native.path;copy.stamp=stamp;copy.size=st.st_size;
-                try { copy.hash=epub_fingerprint(copy.path); }
-                catch(const std::exception&) { continue; }
-                copy.title=copy.path.substr(copy.path.rfind('/')+1);
-                try { const auto metadata=epub_metadata(copy.path); if(!metadata.title.empty()) copy.title=metadata.title; copy.author=metadata.author; }
-                catch(const std::exception&) { /* Filename is a usable metadata fallback. */ }
-            }
-            copy.position=native.position;copies.push_back(std::move(copy));
+    std::map<std::string,LocalCopy> cached;
+    for(const auto& copy:state_->local_copies()) cached[copy.path]=copy;
+    std::set<std::string> seen;
+    for(const auto& native:native_books(config_.database)) {
+        check_cancel(cancel);
+        if(!seen.insert(native.path).second) continue;
+        struct stat st;
+        if(lstat(native.path.c_str(),&st) || !S_ISREG(st.st_mode) || st.st_size<=0 || st.st_size>256LL*1024*1024) continue;
+        const auto stamp=epub_file_stamp(st);
+        LocalCopy copy;
+        const auto found=cached.find(native.path);
+        if(found!=cached.end() && found->second.stamp==stamp) copy=found->second;
+        else {
+            copy.path=native.path;copy.stamp=stamp;copy.size=st.st_size;
+            try { copy.hash=epub_fingerprint(copy.path); }
+            catch(const std::exception&) { continue; }
+            copy.title=copy.path.substr(copy.path.rfind('/')+1);
+            try { const auto metadata=epub_metadata(copy.path); if(!metadata.title.empty()) copy.title=metadata.title; copy.author=metadata.author; }
+            catch(const std::exception&) { /* Filename is a usable metadata fallback. */ }
         }
-        check_cancel(cancel); state_->replace_local_copies(copies); unlink(file.c_str());
-    } catch(...) { unlink(file.c_str()); throw; }
+        copy.position=native.position;copies.push_back(std::move(copy));
+    }
+    check_cancel(cancel); state_->replace_local_copies(copies);
     const auto matches=copies.size();
     trace("scan.end"); return matches;
 }
@@ -108,10 +104,8 @@ LibrarySnapshot ApplicationService::snapshot() {
         result.books.push_back(std::move(entry));
     }
     if(!paths.empty()) {
-        const auto file=config_.root+"/percentages-"+std::to_string(getpid())+"-"+std::to_string(++sequence_)+".db";
         try {
-            backup_native_database(config_.database,file);
-            const auto percentages=native_percentages(file,paths);
+            const auto percentages=native_percentages(config_.database,paths);
             for(auto& entry:result.books) {
                 const auto found=percentages.find(entry.book.path);
                 if(found!=percentages.end()) entry.local_percentage=found->second;
@@ -120,7 +114,6 @@ LibrarySnapshot ApplicationService::snapshot() {
                 }
             }
         } catch(const std::exception&) { /* Missing native counts display as unknown. */ }
-        unlink(file.c_str());
     }
     trace("snapshot.end"); return result;
 }
