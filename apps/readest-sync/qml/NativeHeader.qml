@@ -16,11 +16,6 @@ Item {
         onClose: root.close()
     }
     Rectangle {
-        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        height: 1
-        color: "black"
-    }
-    Rectangle {
         visible: root.showBack
         anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
         width: Math.min(parent.width * 0.14, parent.height)
@@ -45,5 +40,10 @@ Item {
             font.pixelSize: Math.max(26, parent.height * 0.25)
         }
         MouseArea { id: actionTap; anchors.fill: parent; onClicked: root.action() }
+    }
+    Rectangle {
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        height: 1
+        color: "black"
     }
 }
