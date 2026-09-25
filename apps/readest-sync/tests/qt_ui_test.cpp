@@ -12,6 +12,7 @@
 #include <QQmlContext>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <cassert>
 #include <iostream>
 using namespace readest;
@@ -256,8 +257,41 @@ int main(int argc,char** argv) {
                 CoverProvider provider(QString::fromStdString(config.root)); QSize size;
                 const auto decoded=provider.requestImage(QString::fromUtf8(QUrl::toPercentEncoding(path)),&size,QSize(324,485));
                 assert(!decoded.isNull() && decoded.width()==324 && decoded.height()==472);
+                if(i==0) {
+                    const auto payload=QString::fromStdString("fixture-user\n"+b.hash+"\n")+path;
+                    const auto request="thumb/"+QString::fromUtf8(QUrl::toPercentEncoding(payload));
+                    const auto thumbnail=provider.requestImage(request,&size,QSize(105,155));
+                    assert(!thumbnail.isNull() && thumbnail.width()<=105 && thumbnail.height()<=155);
+                    QFile source(path); assert(source.open(QIODevice::ReadOnly));
+                    const auto original=source.readAll(); source.close();
+                    const auto stamp=QFileInfo(path).lastModified();
+                    const auto setStamp=[&](const QDateTime& value) {
+                        assert(source.open(QIODevice::ReadWrite));
+                        const bool changed=source.setFileTime(value,QFileDevice::FileModificationTime);
+                        source.close(); assert(changed);
+                    };
+                    auto damaged=original;
+                    for(int byte=32;byte<damaged.size();++byte) damaged[byte]=0;
+                    assert(source.open(QIODevice::WriteOnly|QIODevice::Truncate)); assert(source.write(damaged)==damaged.size()); source.close();
+                    setStamp(stamp);
+                    CoverProvider restarted(QString::fromStdString(config.root));
+                    assert(restarted.requestImage(request,&size,QSize(105,155))==thumbnail); // Warm restart avoids source decoding.
+                    setStamp(stamp.addSecs(2));
+                    CoverProvider invalidated(QString::fromStdString(config.root));
+                    assert(invalidated.requestImage(request,&size,QSize(105,155)).isNull()); // A changed source cannot reuse stale pixels.
+                    assert(source.open(QIODevice::WriteOnly|QIODevice::Truncate)); assert(source.write(original)==original.size()); source.close();
+                    setStamp(stamp.addSecs(4));
+                    assert(!invalidated.requestImage(request,&size,QSize(105,155)).isNull());
+                }
             }
         }
+        const auto failedRoot=temp.path()+"/failed-thumbnail-cache";
+        assert(QDir().mkpath(failedRoot+"/cover-cache.db"));
+        const auto failedPath=failedRoot+"/cover-device-"+QString(32,'a')+"-1-1.png";
+        QImage fallback(20,30,QImage::Format_Grayscale8); fallback.fill(80); assert(fallback.save(failedPath,"PNG"));
+        const auto failedPayload="device\n"+QString(32,'a')+"\n"+failedPath;
+        CoverProvider failed(failedRoot); QSize failedSize;
+        assert(!failed.requestImage("thumb/"+QString::fromUtf8(QUrl::toPercentEncoding(failedPayload)),&failedSize,QSize(10,15)).isNull());
         state.apply_page("fixture-user",0,page); state.save_book_files("fixture-user",files);
         StoredBook stored; stored.path=(temp.path()+"/local.epub").toStdString();
         { QFile file(QString::fromStdString(stored.path)); assert(file.open(QIODevice::WriteOnly)); file.write("x"); }

@@ -183,7 +183,7 @@ Item {
                 anchors { left: parent.left; top: parent.top; leftMargin: 79 * shell.metrics.scale; topMargin: shell.metrics.smallGap }
                 width: 105 * shell.metrics.scale
                 height: 155 * shell.metrics.scale
-                source: row.coverPath ? "image://cover/" + encodeURIComponent(row.coverPath) : ""
+                source: row.coverPath ? "image://cover/thumb/" + encodeURIComponent(row.account + "\n" + row.bookHash + "\n" + row.coverPath) : ""
                 sourceSize.width: Math.min(1024, width)
                 sourceSize.height: Math.min(1024, height)
                 asynchronous: true
