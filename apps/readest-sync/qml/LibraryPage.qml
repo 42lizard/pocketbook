@@ -65,6 +65,13 @@ Item {
         id: topBands
         anchors { left: parent.left; right: parent.right; top: parent.top }
 
+        MessageBand {
+            width: parent.width
+            shell: root.shell
+            actionText: !shell.view.signedIn && shell.view.statusKind === "warning" ? "Sign in again" : ""
+            onAction: shell.view.showSignIn()
+        }
+
         Item {
             width: parent.width
             height: root.searchOpen ? shell.metrics.framedInput : 0
@@ -78,7 +85,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "‹"
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                     font.pixelSize: shell.metrics.titleFont * 1.4
                 }
                 MouseArea {
@@ -104,7 +111,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "×"
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                     font.pixelSize: shell.metrics.titleFont
                 }
                 MouseArea {
@@ -135,7 +142,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "Clear"
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                     font.pixelSize: shell.metrics.smallFont
                 }
                 MouseArea { id: clearFilterTap; anchors.fill: parent; onClicked: shell.view.setAvailabilityFilter(0) }
@@ -150,7 +157,7 @@ Item {
         clip: true
         model: shell.view.library
         boundsBehavior: Flickable.StopAtBounds
-        interactive: false
+        interactive: topBands.height > 0
 
         delegate: Rectangle {
             id: row
@@ -322,7 +329,7 @@ Item {
                     Text {
                         anchors { fill: parent; leftMargin: shell.metrics.gap }
                         text: modelData
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -358,7 +365,7 @@ Item {
                     Text {
                         anchors { fill: parent; leftMargin: shell.metrics.gap; rightMargin: shell.metrics.gap }
                         text: (shell.view.library.availabilityFilter === index ? "✓  " : "") + modelData
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
@@ -399,7 +406,7 @@ Item {
                     Text {
                         anchors { fill: parent; leftMargin: shell.metrics.gap; rightMargin: shell.metrics.gap }
                         text: modelData
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight

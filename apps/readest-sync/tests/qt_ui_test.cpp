@@ -379,6 +379,9 @@ int main(int argc,char** argv) {
     });
     engine.load(QUrl("qrc:/Main.qml")); assert(!engine.rootObjects().isEmpty());
     auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); assert(window);
+    assert(window->findChild<QObject*>("nativeOperationSurface"));
+    assert(window->findChild<QObject*>("nativeDecisionDialog"));
+    assert(window->findChild<QObject*>("nativeMessageBand"));
     for(bool wide:{false,true}) {
         window->resize(wide?1800:1404,wide?1404:1800); settle();
         for(int i=0;i<13;++i) { control.turnPage(1); settle(10); }
@@ -428,6 +431,14 @@ int main(int argc,char** argv) {
     control.signOut(); finish(control); settle();
     control.showSignIn();settle();
     assert(window->findChild<QObject*>("emailInput") && window->findChild<QObject*>("passwordInput"));
+    control.signIn("",""); settle();
+    bool warningVisible=false;
+    for(auto* band:window->findChildren<QQuickItem*>("nativeMessageBand")) warningVisible|=band->isVisible();
+    assert(control.statusKind()=="warning" && warningVisible);
+    if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty()) {
+        window->resize(1404,1800); settle(); assert(window->grabWindow().save(output+"-sign-in-warning-portrait.png"));
+        window->resize(1800,1404); settle(); assert(window->grabWindow().save(output+"-sign-in-warning-landscape.png"));
+    }
     assert(!warnings);
     std::cout<<"Application isolation, public commands, model/filter identity, runner lifetime and QML checks passed.\n";
 }

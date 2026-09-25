@@ -28,7 +28,7 @@ Item {
         Text {
             anchors.centerIn: parent
             text: "‹"
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
             font.pixelSize: Math.max(44, parent.height * 0.52)
         }
         MouseArea { id: backTap; anchors.fill: parent; onClicked: root.back() }
@@ -41,7 +41,7 @@ Item {
         Text {
             anchors.centerIn: parent
             text: root.actionText
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
             font.pixelSize: Math.max(26, parent.height * 0.25)
         }
         MouseArea { id: actionTap; anchors.fill: parent; onClicked: root.action() }

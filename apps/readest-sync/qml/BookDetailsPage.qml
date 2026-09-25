@@ -8,11 +8,9 @@ Item {
     property var availableActions: shell.view.actions || []
     property bool menuOpen: false
     property bool activating: false
-    readonly property bool choosing: availableActions.length > 0 &&
-        (availableActions[0].command.indexOf("copy:") === 0 ||
-         availableActions[0].command.indexOf("use") === 0 ||
-         availableActions[0].command.indexOf("openPocketBook") === 0)
-    readonly property var primaryAction: choosing ? null : firstContentAction()
+    readonly property bool choosing: availableActions.length > 0 && availableActions[0].command.indexOf("copy:") === 0
+    readonly property bool conflict: shell.view.decision
+    readonly property var primaryAction: choosing || conflict ? null : firstContentAction()
     readonly property var secondaryActions: contentActions(false)
     readonly property var menuActions: contentActions(true)
     readonly property bool hasMenu: menuActions.length > 0
@@ -24,6 +22,7 @@ Item {
     }
     function contentActions(menu) {
         let result = []
+        if (conflict) return result
         for (let action of availableActions) {
             if (action.command === "back") continue
             if (menu) {
@@ -138,21 +137,7 @@ Item {
                 wrapMode: Text.Wrap
             }
 
-            Rectangle {
-                width: parent.width
-                height: statusText.implicitHeight + 2 * shell.metrics.smallGap
-                visible: statusText.text.length > 0
-                color: "white"
-                border.color: "black"
-                Text {
-                    id: statusText
-                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: shell.metrics.largeGap }
-                    text: shell.view.status || ""
-                    color: "black"
-                    font.pixelSize: shell.metrics.smallFont
-                    wrapMode: Text.Wrap
-                }
-            }
+            MessageBand { width: parent.width; shell: root.shell }
 
             Text {
                 visible: root.choosing
@@ -176,7 +161,7 @@ Item {
                     Text {
                         anchors { fill: parent; margins: shell.metrics.largeGap }
                         text: modelData.text
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.Wrap
@@ -198,7 +183,7 @@ Item {
         Text {
             anchors.fill: parent
             text: root.primaryAction ? root.primaryAction.text : ""
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
             font.pixelSize: shell.metrics.bodyFont
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -229,7 +214,7 @@ Item {
                     Text {
                         anchors { fill: parent; margins: shell.metrics.largeGap }
                         text: modelData.text
-                        color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
+            color: Qt.colorEqual(parent.color, "black") ? "white" : "black"
                         font.pixelSize: shell.metrics.bodyFont
                         verticalAlignment: Text.AlignVCenter
                     }

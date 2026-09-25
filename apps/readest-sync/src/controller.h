@@ -16,9 +16,13 @@ class AppController : public QObject {
     Q_PROPERTY(bool detail READ detail NOTIFY changed)
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(QString statusKind READ statusKind NOTIFY changed)
     Q_PROPERTY(QString hint READ hint NOTIFY changed)
     Q_PROPERTY(QVariantMap book READ book NOTIFY changed)
     Q_PROPERTY(QVariantList actions READ actions NOTIFY changed)
+    Q_PROPERTY(bool decision READ decision NOTIFY changed)
+    Q_PROPERTY(bool blocking READ blocking NOTIFY changed)
+    Q_PROPERTY(QString blockingMessage READ blockingMessage NOTIFY changed)
     Q_PROPERTY(LibraryModel* library READ library CONSTANT)
 public:
     explicit AppController(QObject* parent=nullptr);
@@ -31,9 +35,13 @@ public:
     bool detail() const { return !selected_.hash.empty(); }
     QString title() const;
     QString status() const { return busy()?(exiting_?"Stopping…":busy_message_+"…"):status_; }
+    QString statusKind() const { return status_kind_; }
     QString hint() const;
     QVariantMap book() const;
     QVariantList actions() const;
+    bool decision() const { return choice_==ChoiceState::SyncConflict || choice_==ChoiceState::OpenConflict; }
+    bool blocking() const;
+    QString blockingMessage() const;
     LibraryModel* library() { return &library_; }
     Q_INVOKABLE void initialize();
     Q_INVOKABLE void signIn(const QString& email,const QString& password);
@@ -43,6 +51,8 @@ public:
     Q_INVOKABLE void scanDevice();
     Q_INVOKABLE void selectBook(const QString& account,const QString& hash);
     Q_INVOKABLE void runAction(const QString& command);
+    Q_INVOKABLE void cancelDecision();
+    Q_INVOKABLE void acknowledgeBlocking();
     Q_INVOKABLE void search(const QString& text);
     Q_INVOKABLE void setAvailabilityFilter(int value);
     Q_INVOKABLE void setPageCapacity(int value);
@@ -61,9 +71,13 @@ private:
     readest::BookId selected_;
     enum class ChoiceState { None, SyncConflict, OpenConflict, LocalCopy };
     ChoiceState choice_=ChoiceState::None;
+    enum class BlockingState { None, AppliedUnrecorded, NativeCommitUncertain };
+    BlockingState blocking_state_=BlockingState::None;
+    readest::BookId blocking_book_;
+    bool blocking_acknowledged_=false;
     long long revision_=0;
     bool signing_in_=false,initialized_=false,signed_in_=false,exiting_=false,reader_opened_=false;
-    QString status_="Starting…",busy_message_;
+    QString status_="Starting…",status_kind_="info",busy_message_;
     std::unique_ptr<readest::Request> pending_request_;
     void submit(readest::Request request);
     void complete(const readest::Request& request,readest::OperationResult result);
