@@ -34,9 +34,9 @@ Window {
         id: header
         width: parent.width
         height: window.metrics.chrome
-        title: window.view.title || "Readest Sync"
+        title: window.view.detail ? "BOOK INFO / " + (window.view.title || "Untitled") : window.view.title || "Readest Sync"
         showBack: window.view.detail || window.view.signingIn
-        actionText: window.libraryActive ? "Menu" : ""
+        actionText: window.libraryActive || (pageLoader.item && pageLoader.item.hasMenu) ? "Menu" : ""
         onBack: window.handleHardwareButton(Qt.Key_Back)
         onAction: if (pageLoader.item && pageLoader.item.toggleMenu) pageLoader.item.toggleMenu()
         onClose: window.view.close()
@@ -44,7 +44,7 @@ Window {
     FocusScope {
         id: page
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
-        anchors.margins: window.libraryActive ? 0 : window.gap
+        anchors.margins: window.libraryActive || window.view.detail ? 0 : window.gap
         focus: true
         Keys.onPressed: function(event) {
             window.handleHardwareButton(event.key)

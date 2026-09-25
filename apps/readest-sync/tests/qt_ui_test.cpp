@@ -242,7 +242,7 @@ int main(int argc,char** argv) {
             if(i==0) first_hash=b.hash;
             b.title="Book "+std::to_string(i); b.author="Example Author"; b.format="EPUB";
             b.raw=i%2?R"({"progress":[15,60],"updated_at":100})":"{}";
-            page.books.push_back(b); files[b.hash].epubs=i%2;
+            page.books.push_back(b); files[b.hash].epubs=i==0?1:i%2;
             if(i%7==0) {
                 QImage cover(904,1317,QImage::Format_Grayscale8); cover.fill(100+i);
                 const auto path=QString::fromStdString(cover_path(config.root,"fixture-user",b.hash,files[b.hash]));
@@ -278,6 +278,9 @@ int main(int argc,char** argv) {
     control.selectBook("other-user",QString::fromStdString(first_hash)); assert(!control.detail());
     control.selectBook("fixture-user",QString::fromStdString(first_hash));
     assert(control.detail() && control.actions().front().toMap()["text"]=="Open at Readest position");
+    assert(control.status().isEmpty());
+    assert(control.book()["title"]=="Book 0" && control.book()["author"]=="Example Author");
+    assert(control.book()["pocketBookProgress"]=="—" && control.book()["readestProgress"]=="50.0%");
     control.runAction("download"); assert(!control.busy()); // Unavailable commands cannot bypass the screen contract.
     control.back();
     for(int i=0;i<20;++i) control.turnPage(1);
@@ -399,8 +402,22 @@ int main(int argc,char** argv) {
     assert(libraryPage->property("filterMenuOpen").toBool() && window->findChild<QQuickItem*>("nativeFilterMenu")->isVisible());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
     assert(!libraryPage->property("filterMenuOpen").toBool());
+    window->resize(1404,1800); settle();
     control.selectBook("fixture-user",QString::fromStdString(first_hash)); settle();
-    assert(control.actions().size()==5); control.back();
+    assert(control.actions().size()==5);
+    auto* detailsPage=window->findChild<QObject*>("nativeBookDetailsPage"); assert(detailsPage);
+    assert(window->findChild<QQuickItem*>("nativePrimaryAction")->isVisible());
+    assert(detailsPage->property("hasMenu").toBool());
+    if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
+        assert(window->grabWindow().save(output+"-detail-portrait.png"));
+    QMetaObject::invokeMethod(detailsPage,"toggleMenu"); settle();
+    assert(window->findChild<QQuickItem*>("nativeBookMenu")->isVisible());
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
+    assert(control.detail() && !detailsPage->property("menuOpen").toBool());
+    window->resize(1800,1404); settle(); assert(control.detail() && window->findChild<QObject*>("nativeBookDetailsPage"));
+    if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
+        assert(window->grabWindow().save(output+"-detail-landscape.png"));
+    window->resize(1404,1800); settle(); control.back();
     cover_scenario=true;
     control.refreshLibrary(); finish(control);
     assert(control.status().startsWith("Library refreshed"));

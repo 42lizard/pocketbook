@@ -17,6 +17,7 @@ class AppController : public QObject {
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(QString hint READ hint NOTIFY changed)
+    Q_PROPERTY(QVariantMap book READ book NOTIFY changed)
     Q_PROPERTY(QVariantList actions READ actions NOTIFY changed)
     Q_PROPERTY(LibraryModel* library READ library CONSTANT)
 public:
@@ -31,6 +32,7 @@ public:
     QString title() const;
     QString status() const { return busy()?(exiting_?"Stopping…":busy_message_+"…"):status_; }
     QString hint() const;
+    QVariantMap book() const;
     QVariantList actions() const;
     LibraryModel* library() { return &library_; }
     Q_INVOKABLE void initialize();
