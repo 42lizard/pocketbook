@@ -120,16 +120,12 @@ void Simulator::attach(QQmlApplicationEngine& engine,AppController& controller) 
     // count as returning from it; closeReader delivers that event explicitly.
     window_->setProperty("resumeOnActivation",false);
     engine.rootContext()->setContextProperty("simulator",this);
-    buttonHandler=[this,&controller](int key) {
+    buttonHandler=[this](int key) {
         if(!path_.isEmpty()) {
             if(key==Qt::Key_Back) closeReader();
-            else turnReader(key==Qt::Key_PageUp?-1:1);
+            else if(key==Qt::Key_PageUp || key==Qt::Key_PageDown) turnReader(key==Qt::Key_PageUp?-1:1);
         } else {
-            QVariant handled;
-            if(auto* page=window_->findChild<QObject*>("nativeLibraryPage"); page &&
-                QMetaObject::invokeMethod(page,"handleKey",Q_RETURN_ARG(QVariant,handled),Q_ARG(QVariant,QVariant(key))) && handled.toBool()) return;
-            if(key==Qt::Key_Back) controller.back();
-            else controller.turnPage(key==Qt::Key_PageUp?-1:1);
+            QMetaObject::invokeMethod(window_,"handleHardwareButton",Q_ARG(QVariant,QVariant(key)));
         }
     };
     attachWindow(engine,QUrl("qrc:/simulator/Simulator.qml"));

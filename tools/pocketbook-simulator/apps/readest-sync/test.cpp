@@ -23,6 +23,11 @@ static void settle(int milliseconds=100) {
     QElapsedTimer timer; timer.start();
     while(timer.elapsed()<milliseconds) { QCoreApplication::processEvents(); QThread::msleep(1); }
 }
+static QQuickItem* activeItem(QQuickWindow* window,const QString& objectName) {
+    for(auto* item:window->findChildren<QQuickItem*>(objectName))
+        if(item->window()==window && item->isVisible()) return item;
+    return nullptr;
+}
 static void finish(AppController& control) {
     QElapsedTimer timer; timer.start();
     while(control.busy() && timer.elapsed()<15000) settle(10);
@@ -66,6 +71,7 @@ int main(int argc,char** argv) {
         warnings=true; for(const auto& error:errors) std::cerr<<error.toString().toStdString()<<"\n";
     });
     engine.load(QUrl("qrc:/Main.qml")); assert(!engine.rootObjects().isEmpty());
+    auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); assert(window);
     sim.attach(engine,control);
     if(sim.realCloud()) {
         // A mock session at the old location must not sign in the real profile.
@@ -149,6 +155,8 @@ int main(int argc,char** argv) {
     action(control,"Open at Readest position"); assert(sim.chapter()==2 && !sim.readerPath().isEmpty());
     sim.turnReader(1); sim.closeReader(); finish(control);
     sim.remoteChapter(1); action(control,"Sync now"); assert(control.status().startsWith("Both positions differ"));
+    auto* conflictDetails=activeItem(window,"nativeBookDetailsPage"); assert(conflictDetails);
+    sim.button(Qt::Key_Menu); settle(); assert(!conflictDetails->property("menuOpen").toBool());
     action(control,"Use Readest position");
     action(control,"Open at Readest position"); assert(sim.chapter()==1);
     sim.turnReader(1); sim.closeReader(); finish(control);
@@ -197,13 +205,14 @@ int main(int argc,char** argv) {
     assert(current().book.path==late.toStdString());
     assert(QDir(QString::fromStdString(books_root)).entryList(QDir::Dirs|QDir::NoDotAndDotDot)==managed_dirs);
     sim.transfer(0); action(control,"Back to library"); control.search("");
-    auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); assert(window);
     assert(!window->property("resumeOnActivation").toBool());
     auto* overlay=window->findChild<QQuickItem*>("simulatorOverlay"); assert(overlay);
     auto* panel=overlay->findChild<QQuickItem*>("simulatorPanel"); assert(panel);
     panel->setVisible(false);
-    auto* libraryPage=window->findChild<QObject*>("nativeLibraryPage"); assert(libraryPage);
+    auto* libraryPage=activeItem(window,"nativeLibraryPage"); assert(libraryPage);
     assert(sim.readerPath().isEmpty());
+    sim.button(Qt::Key_Menu); settle(); assert(libraryPage->property("menuOpen").toBool());
+    sim.button(Qt::Key_Menu); settle(); assert(!libraryPage->property("menuOpen").toBool());
     libraryPage->setProperty("menuOpen",true); sim.button(Qt::Key_Back); settle();
     assert(!libraryPage->property("menuOpen").toBool());
     for(int i=0;i<13;++i) control.turnPage(-1);

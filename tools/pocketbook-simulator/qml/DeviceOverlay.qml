@@ -37,9 +37,10 @@ Item {
                 Label { width: parent.width; text: "Device buttons"; font.bold: true }
                 Row {
                     width: parent.width; spacing: 12
-                    Button { width: (parent.width - 24) / 3; text: "Previous"; onClicked: simDevice.button(Qt.Key_PageUp) }
-                    Button { width: (parent.width - 24) / 3; text: "Next"; onClicked: simDevice.button(Qt.Key_PageDown) }
-                    Button { width: (parent.width - 24) / 3; text: "Back"; onClicked: simDevice.button(Qt.Key_Back) }
+                    Button { width: (parent.width - 36) / 4; text: "Previous"; onClicked: simDevice.button(Qt.Key_PageUp) }
+                    Button { width: (parent.width - 36) / 4; text: "Next"; onClicked: simDevice.button(Qt.Key_PageDown) }
+                    Button { width: (parent.width - 36) / 4; text: "Back"; onClicked: simDevice.button(Qt.Key_Back) }
+                    Button { width: (parent.width - 36) / 4; text: "Menu"; onClicked: simDevice.button(Qt.Key_Menu) }
                 }
                 Button { text: "Rotate portrait / landscape"; onClicked: simDevice.rotate() }
                 Button { text: "Save app screenshot"; onClicked: { overlay.panelOpen = false; capture.start() } }

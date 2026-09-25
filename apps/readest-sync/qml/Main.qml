@@ -24,10 +24,18 @@ Window {
     NativeMetrics { id: nativeMetrics; viewportWidth: window.width; viewportHeight: window.height }
 
     function handleHardwareButton(key) {
-        if (pageLoader.item && pageLoader.item.handleKey && pageLoader.item.handleKey(key)) return
-        if (key === Qt.Key_Back || key === Qt.Key_Escape || key === Qt.Key_Home) appController.back()
-        else if (key === Qt.Key_PageDown || key === Qt.Key_Right) appController.turnPage(1)
-        else if (key === Qt.Key_PageUp || key === Qt.Key_Left) appController.turnPage(-1)
+        const normalizedKey = Number(key)
+        if (normalizedKey === Qt.Key_Menu) {
+            if (!view.busy && !view.decision && !view.blocking &&
+                    pageLoader.item && pageLoader.item.toggleMenu &&
+                    (window.libraryActive || pageLoader.item.hasMenu))
+                pageLoader.item.toggleMenu()
+            return
+        }
+        if (pageLoader.item && pageLoader.item.handleKey && pageLoader.item.handleKey(normalizedKey)) return
+        if (normalizedKey === Qt.Key_Back || normalizedKey === Qt.Key_Escape || normalizedKey === Qt.Key_Home) appController.back()
+        else if (normalizedKey === Qt.Key_PageDown || normalizedKey === Qt.Key_Right) appController.turnPage(1)
+        else if (normalizedKey === Qt.Key_PageUp || normalizedKey === Qt.Key_Left) appController.turnPage(-1)
     }
 
     NativeHeader {
@@ -47,7 +55,11 @@ Window {
         anchors.margins: window.libraryActive || window.view.detail ? 0 : window.gap
         focus: true
         Keys.onPressed: function(event) {
-            window.handleHardwareButton(event.key)
+            if (event.key !== Qt.Key_Menu) window.handleHardwareButton(event.key)
+            event.accepted = true
+        }
+        Keys.onReleased: function(event) {
+            if (event.key === Qt.Key_Menu && !event.isAutoRepeat) window.handleHardwareButton(event.key)
             event.accepted = true
         }
         Loader {
