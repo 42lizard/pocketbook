@@ -9,6 +9,7 @@
 #include <sys/resource.h>
 #include <cstdio>
 #include <set>
+#include <chrono>
 
 namespace readest {
 ApplicationService::ApplicationService(ApplicationConfig config):config_(std::move(config)) {
@@ -29,8 +30,10 @@ void ApplicationService::trace(const char* phase) const {
         peak/=1024;
 #endif
         char line[192];
-        const int size=snprintf(line,sizeof(line),"%lld pid=%ld peak_kib=%ld %s\n",
-            static_cast<long long>(time(nullptr)),static_cast<long>(getpid()),peak,phase);
+        const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const int size=snprintf(line,sizeof(line),"%lld pid=%ld peak_kib=%ld mono_ms=%lld %s\n",
+            static_cast<long long>(time(nullptr)),static_cast<long>(getpid()),peak,static_cast<long long>(ms),phase);
         if(size>0 && static_cast<size_t>(size)<sizeof(line)) { const auto written=write(fd,line,size); (void)written; }
     }
     close(fd);
