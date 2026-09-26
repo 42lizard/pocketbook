@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <set>
+#include <tuple>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -295,11 +296,24 @@ std::vector<LocalCopy> State::local_copies() {
 void State::replace_local_copies(const std::vector<LocalCopy>& copies) {
     sql(db_,"BEGIN IMMEDIATE");
     try {
-        sql(db_,"DELETE FROM local_copies");
+        std::map<std::string,LocalCopy> previous;
+        for(const auto& copy:local_copies()) previous[copy.path]=copy;
+        std::set<std::string> present;
+        const auto fields=[](const LocalCopy& copy) {
+            return std::tie(copy.stamp,copy.hash,copy.title,copy.author,copy.position,copy.size);
+        };
         for(const auto& copy:copies) {
-            Query q(db_,"INSERT OR REPLACE INTO local_copies VALUES(?,?,?,?,?,?,?)");
+            present.insert(copy.path);
+            const auto found=previous.find(copy.path);
+            if(found!=previous.end() && fields(found->second)==fields(copy)) continue;
+            Query q(db_,found==previous.end() ? "INSERT INTO local_copies VALUES(?,?,?,?,?,?,?)" :
+                "UPDATE local_copies SET stamp=?2,hash=?3,title=?4,author=?5,position=?6,size=?7 WHERE path=?1");
             q.bind(1,copy.path);q.bind(2,copy.stamp);q.bind(3,copy.hash);q.bind(4,copy.title);
             q.bind(5,copy.author);q.bind(6,copy.position);q.bind(7,copy.size);q.row();
+            previous[copy.path]=copy;
+        }
+        for(const auto& entry:previous) if(!present.count(entry.first)) {
+            Query q(db_,"DELETE FROM local_copies WHERE path=?");q.bind(1,entry.first);q.row();
         }
         sql(db_,"COMMIT");
     } catch(...) {sqlite3_exec(db_,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
