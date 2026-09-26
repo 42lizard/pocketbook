@@ -10,18 +10,18 @@ OperationRunner::~OperationRunner() {
     releaseAwake();
 }
 void OperationRunner::releaseAwake() {
-    if(online_ && device_.keepAwake) device_.keepAwake(false);
-    online_=false;
+    if(awake_ && device_.keepAwake) device_.keepAwake(false);
+    awake_=false; online_=false;
 }
 void OperationRunner::cancel() { cancelled_=true; }
 bool OperationRunner::start(Task task,bool online,Completion complete,std::function<void(bool)> phase) {
     if(busy_) return false;
     task_=std::move(task); complete_=std::move(complete); phase_=std::move(phase);
     result_={}; cancelled_=false; done_=false; busy_=true; online_=online; connecting_=online;
+    // Standby pauses offline workers too, including startup and library scans.
+    if(!awake_ && device_.keepAwake) device_.keepAwake(true);
+    awake_=true;
     if(online) {
-        // PocketBook standby pauses both background work and the monotonic
-        // timeout clock. Hold it off until this online operation finishes.
-        if(device_.keepAwake) device_.keepAwake(true);
         networkTrace("runner.online");
         if(connection_ && connection_->done) connection_.reset();
         next_ping_=Clock::now()+std::chrono::milliseconds(device_.keepaliveMs);
@@ -98,7 +98,9 @@ void OperationRunner::poll() {
     }
     if(!done_) return;
     if(worker_.joinable()) worker_.join();
-    timer_.stop(); busy_=false; releaseAwake(); phase_=nullptr;
+    timer_.stop(); busy_=false; phase_=nullptr;
     auto complete=std::move(complete_); complete_=nullptr;
     complete(std::move(result_));
+    // Completion updates the UI and may start the next operation immediately.
+    if(!busy_) releaseAwake();
 }

@@ -170,6 +170,33 @@ static void bookActionChecks() {
 }
 static void runnerChecks() {
     {
+        // Startup and other offline workers must not be suspended mid-task.
+        bool awake=false,completed=false;
+        DeviceAccess device;
+        device.keepAwake=[&](bool value) { assert(awake!=value);awake=value; };
+        device.connect=[](std::function<void(int)>) { assert(false);return false; };
+        for(bool fail:{false,true}) {
+            completed=false; OperationRunner runner(device);
+            assert(runner.start([&](const std::atomic<bool>&) -> OperationResult {
+                assert(awake);
+                if(fail) throw std::runtime_error("Offline failure");
+                return OperationResult{};
+            },false,[&](OperationResult r) {
+                assert(awake);assert(r.outcome==(fail?Outcome::Failed:Outcome::Ready));completed=true;
+            },[](bool online) { assert(!online); }));
+            settle(250);assert(completed && !awake);
+        }
+        OperationRunner runner(device); int completions=0;
+        auto work=[&](const std::atomic<bool>&) { assert(awake);return OperationResult{}; };
+        assert(runner.start(work,false,[&](OperationResult) {
+            assert(awake);++completions;
+            assert(runner.start(work,false,[&](OperationResult) {
+                assert(awake);++completions;
+            },[](bool) {}));
+        },[](bool) {}));
+        settle(500);assert(completions==2 && !awake);
+    }
+    {
         // An online operation must hold standby off before waking Wi-Fi,
         // through the worker, and release it on every completion path.
         bool awake=false,completed=false;int executions=0;
@@ -179,7 +206,7 @@ static void runnerChecks() {
         device.connectionTimeoutMs=1000;
         device.connect=[&](std::function<void(int)> callback) { assert(awake);callback(0);return true; };
         auto work=[&](const std::atomic<bool>&) { assert(awake);++executions;return OperationResult{}; };
-        auto complete=[&](OperationResult) { assert(!awake);completed=true; };
+        auto complete=[&](OperationResult) { assert(awake);completed=true; };
         {
             OperationRunner runner(device);
             assert(runner.start(work,true,complete,[](bool) {}));
