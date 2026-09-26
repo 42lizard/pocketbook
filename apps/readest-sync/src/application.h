@@ -69,7 +69,6 @@ private:
     void check_cancel(const std::atomic<bool>& cancel) const;
     size_t scan(const std::atomic<bool>& cancel);
     LibrarySnapshot snapshot();
-    NativePosition capture(const std::string& path);
     ManagedBook resolve(const BookId& id);
     void synchronize(const Request& request, OperationResult& result, const std::atomic<bool>& cancel);
 };
