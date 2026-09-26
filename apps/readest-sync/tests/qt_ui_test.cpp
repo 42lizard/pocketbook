@@ -8,6 +8,7 @@
 #include <QThread>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QMouseEvent>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -36,6 +37,19 @@ static int count_named(QQuickItem* item,const QString& name) {
     int count=item->objectName()==name;
     for(auto* child:item->childItems()) count+=count_named(child,name);
     return count;
+}
+static QQuickItem* find_item(QQuickItem* item,const QString& name) {
+    if(item->objectName()==name) return item;
+    for(auto* child:item->childItems()) if(auto* found=find_item(child,name)) return found;
+    return nullptr;
+}
+static void tap_book(QQuickWindow* window) {
+    auto* row=find_item(window->contentItem(),"detailedBookRow"); assert(row);
+    const auto point=row->mapToScene(QPointF(row->width()/2,row->height()/2));
+    QMouseEvent press(QEvent::MouseButtonPress,point,point,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+    QCoreApplication::sendEvent(window,&press);
+    QMouseEvent release(QEvent::MouseButtonRelease,point,point,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+    QCoreApplication::sendEvent(window,&release); settle();
 }
 static ApplicationConfig configAt(const QString& base) {
     ApplicationConfig config;
@@ -526,15 +540,26 @@ int main(int argc,char** argv) {
         if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
             assert(picture.save(output+(wide?"-landscape.png":"-portrait.png")));
     }
-    auto* libraryPage=window->findChild<QObject*>("nativeLibraryPage"); assert(libraryPage);
+    auto* libraryPage=find_item(window->contentItem(),"nativeLibraryPage"); assert(libraryPage);
+    for(int attempt=0;attempt<3;++attempt) {
+        tap_book(window);
+        assert(control.detail() && find_item(window->contentItem(),"nativeBookDetailsPage"));
+        control.back(); settle();
+    }
+    libraryPage=find_item(window->contentItem(),"nativeLibraryPage"); assert(libraryPage);
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(libraryPage->property("menuOpen").toBool());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(!libraryPage->property("menuOpen").toBool());
     hold_foreground=true; control.refreshLibrary(); settle(); assert(control.busy());
+    tap_book(window); assert(!control.detail());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(!libraryPage->property("menuOpen").toBool());
     hold_foreground=false; finish(control);
+    tap_book(window);
+    assert(control.detail() && find_item(window->contentItem(),"nativeBookDetailsPage"));
+    control.back(); settle();
+    libraryPage=find_item(window->contentItem(),"nativeLibraryPage"); assert(libraryPage);
     auto* header=window->findChild<QObject*>("nativeHeader"); assert(header);
     // The same shell receives Menu from both the header and hardware.
     QVariantMap menuView{{"initialized",true},{"signingIn",false},{"detail",false},
@@ -568,8 +593,8 @@ int main(int argc,char** argv) {
     window->resize(1404,1800); settle();
     control.selectBook("fixture-user",QString::fromStdString(first_hash)); settle();
     assert(control.actions().size()==5);
-    auto* detailsPage=window->findChild<QObject*>("nativeBookDetailsPage"); assert(detailsPage);
-    assert(window->findChild<QQuickItem*>("nativePrimaryAction")->isVisible());
+    auto* detailsPage=find_item(window->contentItem(),"nativeBookDetailsPage"); assert(detailsPage);
+    assert(find_item(window->contentItem(),"nativePrimaryAction")->isVisible());
     assert(detailsPage->property("primaryAction").toMap()==control.actionPresentation().value("primary").toMap());
     assert(detailsPage->property("menuActions").toList()==control.actionPresentation().value("menu").toList());
     assert(detailsPage->property("hasMenu").toBool());
@@ -580,7 +605,7 @@ int main(int argc,char** argv) {
     if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
         assert(window->grabWindow().save(output+"-detail-portrait.png"));
     QMetaObject::invokeMethod(detailsPage,"toggleMenu"); settle();
-    assert(window->findChild<QQuickItem*>("nativeBookMenu")->isVisible());
+    assert(find_item(window->contentItem(),"nativeBookMenu")->isVisible());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
     assert(control.detail() && !detailsPage->property("menuOpen").toBool());
     window->resize(1800,1404); settle(); assert(control.detail() && window->findChild<QObject*>("nativeBookDetailsPage"));

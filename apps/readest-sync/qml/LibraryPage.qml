@@ -43,7 +43,7 @@ Item {
     }
 
     function openBook(account, hash) {
-        if (activating) return
+        if (activating || shell.view.busy) return
         activating = true
         menuOpen = false
         filterMenuOpen = false
