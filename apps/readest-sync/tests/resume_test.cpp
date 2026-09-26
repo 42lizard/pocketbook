@@ -20,8 +20,8 @@ int commit(void*) {
     if(!faults.armed) return 0;
     faults.committed=true;
     if(faults.mode=="cancel" || faults.mode=="audit-cancel" || faults.mode=="state-failure-cancel") *faults.cancel=true;
-    if(faults.mode=="audit" || faults.mode=="audit-cancel") assert(mkdir((faults.audit+"/committed.txt").c_str(),0700)==0);
-    return faults.mode=="uncertain"?1:0;
+    if(faults.mode=="audit" || faults.mode=="audit-cancel") assert(mkdir((faults.audit+"/outcome.txt").c_str(),0700)==0);
+    return faults.mode.starts_with("uncertain")?1:0;
 }
 int authorize(void* connection,int action,const char* table,const char*,const char*,const char*) {
     if(faults.armed && table && std::strcmp(table,"books_settings")==0) {
@@ -85,7 +85,8 @@ int main(int argc,char** argv) {
     assert(saved.pending_remote.empty() && saved.positions.has_baseline);
     assert(saved.positions.local==bravo && saved.positions.last_local==bravo && saved.positions.last_remote==bravo);
     assert(native_position(database,path).cfi==bravo && full_inspections==1);
-    assert(std::filesystem::exists(context.audit_directory+"/before.db"));
+    assert(std::filesystem::exists(context.audit_directory+"/before.json"));
+    assert(read_text(context.audit_directory+"/outcome.txt")=="committed");
     for(const std::string mode:{"cancel","audit","audit-cancel","state-failure"}) {
         faults.armed=false; faults.committed=false; cancel=false;
         sql(database,"UPDATE books_settings SET position='#"+alpha+"',position_ts=100;");
@@ -137,14 +138,19 @@ int main(int argc,char** argv) {
         const auto persisted=state.sync("user",book.book.hash);
         if(mode=="stale-revision") assert(!rejected && result.outcome==ResumeOutcome::Blocked);
         else if(mode=="remote-change") assert(!rejected && result.outcome==ResumeOutcome::NoPending && persisted.pending_remote.empty());
-        else if(mode=="uncertain") assert(!rejected && result.outcome==ResumeOutcome::CommitUncertain && !result.error.empty());
+        else if(mode=="uncertain") {
+            assert(!rejected && result.outcome==ResumeOutcome::CommitUncertain && !result.error.empty());
+            assert(read_text(context.audit_directory+"/outcome.txt").starts_with("uncertain\n"));
+        }
         else if(mode=="missing-settings") assert(!rejected && result.outcome==ResumeOutcome::NeedsNativeSettings);
         else assert(rejected);
+        if(rejected && std::filesystem::exists(context.audit_directory+"/outcome.txt"))
+            assert(read_text(context.audit_directory+"/outcome.txt").starts_with("rolled back\n"));
         if(mode!="remote-change") assert(persisted.positions.last_local==(mode=="missing-settings"?"":alpha));
     }
     // Public application results must suppress handoff on cancellation or a
     // committed-but-unrecorded result, even when cancellation accompanies failure.
-    for(const std::string mode:{"success","cancel","state-failure","state-failure-cancel","uncertain"}) {
+    for(const std::string mode:{"success","cancel","state-failure","state-failure-cancel","uncertain-rolled-back","uncertain-committed"}) {
         faults.armed=false; faults.committed=false; cancel=false; remote=bravo;
         sql(database,"DELETE FROM books_settings; INSERT INTO books_settings VALUES(1,1,'#"+alpha+"',100,1,100,0);");
         ApplicationConfig config; config.root=root+"/app-"+mode; config.books_root=config.root+"/Books/Readest";
@@ -170,7 +176,7 @@ int main(int argc,char** argv) {
             assert(result.open_path.empty());
             if(mode=="cancel") assert(result.outcome==Outcome::Cancelled && app_state.sync("user",book.book.hash).pending_remote.empty());
             if(mode.starts_with("state-failure")) assert(result.outcome==Outcome::AppliedUnrecorded && !result.error.empty());
-            if(mode=="uncertain") assert(result.outcome==Outcome::NativeCommitUncertain && !result.error.empty());
+            if(mode.starts_with("uncertain")) assert(result.outcome==Outcome::NativeCommitUncertain && !result.error.empty());
         }
         if(mode.starts_with("state-failure")) {
             cancel=false; request.command=Command::Sync;
@@ -179,7 +185,26 @@ int main(int argc,char** argv) {
             assert(app_state.sync("user",book.book.hash).pending_remote.empty());
             assert(native_position(database,path).cfi==bravo);
         }
+        if(mode.starts_with("uncertain")) {
+            if(mode=="uncertain-committed")
+                sql(database,"UPDATE books_settings SET position='pbr:/webkit?##"+bravo+"',position_ts=101;");
+            request.command=Command::Sync;
+            const auto recovered=service.execute(request,cancel);
+            assert(recovered.outcome==Outcome::Synced);
+            if(mode=="uncertain-committed") {
+                assert(recovered.sync_action==SyncAction::EstablishBaseline);
+                assert(app_state.sync("user",book.book.hash).pending_remote.empty());
+            } else {
+                assert(recovered.sync_action==SyncAction::ApplyRemote);
+                request.command=Command::Open; request.revision=recovered.revision;
+                const auto retried=service.execute(request,cancel);
+                assert(retried.outcome==Outcome::Applied && retried.open_path==path);
+            }
+            assert(native_position(database,path).cfi==bravo);
+        }
     }
+    for(const auto& entry:std::filesystem::recursive_directory_iterator(root))
+        assert(entry.path().filename()!="before.db");
     sqlite3_reset_auto_extension();
     std::cout<<"Native resume transition checks passed.\n";
 }

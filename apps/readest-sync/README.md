@@ -32,7 +32,8 @@ and library snapshots. A book request is validated against its signed-in account
 
 The progress module owns reconciliation and the staged native-resume transition.
 Sync stages incoming progress; explicit Open reconciles fresh observations before
-applying it. The native writer retains its guarded transaction and backups, while
+applying it. The PocketBook reading-position writer retains its guarded transaction
+and small audit, while
 the progress module finalizes the baseline and returns the committed app-state
 revision. Cancellation after a native commit still allows that finalization.
 A failed final audit marker is reported separately from a failed position write.
@@ -170,8 +171,9 @@ When Open encounters conflicting positions or an earlier position, it offers
 **Open at PocketBook position** and **Open at Readest position**. The PocketBook
 option opens locally without updating the cloud. The Readest option rechecks the
 saved choice and applies it immediately, including an earlier passage, using the
-normal native backup and conditional update. Earlier PocketBook positions are
-not automatically pushed to Readest, whose other clients prefer forward progress. KOReader element/text XPointers can be resolved against
+guarded PocketBook reading-position transaction and conditional update. Earlier
+PocketBook positions are not automatically pushed to Readest, whose other clients
+prefer forward progress. KOReader element/text XPointers can be resolved against
 the original XHTML EPUB spine, including collapsed whitespace and UTF-16 text
 offsets. Unsupported paths and mixed-media spines are rejected; no page
 percentage is used to guess a position.
@@ -183,7 +185,7 @@ existing books. Cloud deletions and sign-out retain local EPUB files.
 ## Local data
 
 `system/readest-sync` holds the app's SQLite state, session, certificate bundle
-and native position-change backups. Passwords are not persisted. Refresh tokens
+and PocketBook reading-position audits. Passwords are not persisted. Refresh tokens
 are saved for login continuity; PocketBook's USB-readable FAT storage cannot
 make them confidential through Unix file permissions. Sign-out removes the
 saved session without revoking sessions on the user's other devices.

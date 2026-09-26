@@ -394,60 +394,36 @@ static NativeApplyResult apply_position(const std::string& database, const std::
         throw std::runtime_error("Missing or unsafe native database");
     if (mkdir(directory.c_str(), 0700) != 0)
         throw std::runtime_error("Trial directory must be new");
-    const std::string backup_path = directory + "/before.db";
-    int fd = open(backup_path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0600);
-    if (fd < 0) throw std::runtime_error("Cannot create trial backup");
-    close(fd);
     Database source(database, true);
     query(source, "PRAGMA synchronous=FULL");
-    {
-        Database backup(backup_path, true);
-        sqlite3_backup* copy = sqlite3_backup_init(backup.db, "main", source.db, "main");
-        if (!copy) throw std::runtime_error("Cannot start transactional backup");
-        int step = sqlite3_backup_step(copy, -1);
-        int finish = sqlite3_backup_finish(copy);
-        if (step != SQLITE_DONE || finish != SQLITE_OK)
-            throw std::runtime_error("Native database busy; backup failed, no position written");
-        // Make the private backup standalone even when the source uses WAL.
-        query(backup, "PRAGMA journal_mode=DELETE");
-    }
-    Database backup(backup_path);
-    auto check = query(backup, "PRAGMA quick_check");
-    if (json_object_array_length(check.get()) != 1 ||
-        field(json_object_array_get_idx(check.get(), 0), "quick_check") != "ok")
-        throw std::runtime_error("Trial backup failed integrity check");
     const auto params=path_parameters(book_path);
-    auto ids = query(backup, native_identify, params);
-    if (json_object_array_length(ids.get()) != 1 ||
-        field(json_object_array_get_idx(ids.get(), 0), "hash") != expected_hash)
-        throw std::runtime_error("Unexpected test book identity; no position written");
-    auto id = field(json_object_array_get_idx(ids.get(), 0), "book_id");
-    auto before = query(backup, "SELECT * FROM books_settings WHERE bookid=?", {id});
-    if (json_object_array_length(before.get()) != 1)
-        throw std::runtime_error("Missing or ambiguous test profile");
-    auto row = json_object_array_get_idx(before.get(), 0);
-    auto profile = field(row, "profileid");
-    if (profile.empty() || (!field(row,"position").empty() && point_cfi(field(row, "position")).empty()))
-        throw std::runtime_error("Unsupported current position or timestamp");
-    if(expected && (expected->book_id!=id || expected->profile_id!=profile ||
-        expected->raw_position!=field(row,"position") || expected->timestamp!=field(row,"position_ts")))
-        throw std::runtime_error("Native position changed since synchronization; retry");
     const std::string start = readest_start_cfi(readest_range);
     if (start.empty()) throw std::runtime_error("Unsupported Readest target");
     const std::string target = "pbr:/webkit?##" + start;
-    if (point_cfi(field(row, "position")) == point_cfi(target))
-        throw std::runtime_error("Native reader is already at the requested position");
-    const std::string timestamp = std::to_string(time(nullptr));
-    write_text(directory + "/before.json", json_object_to_json_string_ext(before.get(), JSON_C_TO_STRING_PRETTY));
-    write_text(directory + "/target.txt", target + "\n" + timestamp + "\n");
-    write_text(directory + "/readest-source-cfi.txt", readest_range + "\n");
     query(source, "BEGIN IMMEDIATE");
     bool committing=false;
     try {
-        auto current_ids = query(source, native_identify, params);
-        auto current = query(source, "SELECT * FROM books_settings WHERE bookid=?", {id});
-        if (!same_rows(ids.get(), current_ids.get()) || !same_rows(before.get(), current.get()))
-            throw std::runtime_error("Reader state changed since backup; retry after closing book");
+        auto ids = query(source, native_identify, params);
+        if (json_object_array_length(ids.get()) != 1 ||
+            field(json_object_array_get_idx(ids.get(), 0), "hash") != expected_hash)
+            throw std::runtime_error("Unexpected test book identity; no position written");
+        auto id = field(json_object_array_get_idx(ids.get(), 0), "book_id");
+        auto before = query(source, "SELECT * FROM books_settings WHERE bookid=?", {id});
+        if (json_object_array_length(before.get()) != 1)
+            throw std::runtime_error("Missing or ambiguous test profile");
+        auto row = json_object_array_get_idx(before.get(), 0);
+        auto profile = field(row, "profileid");
+        if (profile.empty() || (!field(row,"position").empty() && point_cfi(field(row, "position")).empty()))
+            throw std::runtime_error("Unsupported current position or timestamp");
+        if(expected && (expected->book_id!=id || expected->profile_id!=profile ||
+            expected->raw_position!=field(row,"position") || expected->timestamp!=field(row,"position_ts")))
+            throw std::runtime_error("Native position changed since synchronization; retry");
+        if (point_cfi(field(row, "position")) == point_cfi(target))
+            throw std::runtime_error("Native reader is already at the requested position");
+        const std::string timestamp = std::to_string(time(nullptr));
+        write_text(directory + "/before.json", json_object_to_json_string_ext(before.get(), JSON_C_TO_STRING_PRETTY));
+        write_text(directory + "/target.txt", target + "\n" + timestamp + "\n");
+        write_text(directory + "/readest-source-cfi.txt", readest_range + "\n");
         // Permit only the observed completion triggers, which cannot fire here.
         auto triggers = query(source, "SELECT sql FROM sqlite_master WHERE type='trigger' AND tbl_name='books_settings'");
         for (size_t i = 0; i < static_cast<size_t>(json_object_array_length(triggers.get())); ++i) {
@@ -472,13 +448,18 @@ static NativeApplyResult apply_position(const std::string& database, const std::
     } catch (const std::exception& error) {
         const bool ended=sqlite3_get_autocommit(source.db)!=0;
         const int rollback=sqlite3_exec(source.db, "ROLLBACK", nullptr, nullptr, nullptr);
-        if((committing && ended) || (!ended && rollback!=SQLITE_OK))
-            return {NativeApplyStatus::Uncertain,"Cannot confirm native position commit or rollback. Backup: "+directory+". "+error.what()};
+        if((committing && ended) || (!ended && rollback!=SQLITE_OK)) {
+            try { write_text(directory + "/outcome.txt", "uncertain\n" + std::string(error.what()) + "\n"); }
+            catch(const std::exception&) { /* The uncertain result remains authoritative. */ }
+            return {NativeApplyStatus::Uncertain,"Cannot confirm native position commit or rollback. Audit: "+directory+". "+error.what()};
+        }
+        try { write_text(directory + "/outcome.txt", "rolled back\n" + std::string(error.what()) + "\n"); }
+        catch(const std::exception&) { /* Preserve the original pre-commit failure. */ }
         throw;
     }
-    try { write_text(directory + "/committed.txt", "Position committed; verify visible passage.\n"); }
+    try { write_text(directory + "/outcome.txt", "committed\n"); }
     catch (const std::exception&) {
-        return {NativeApplyStatus::Committed,"PocketBook position changed, but the final audit log could not be saved. Backup: "+directory};
+        return {NativeApplyStatus::Committed,"PocketBook position changed, but the final audit log could not be saved. Audit: "+directory};
     }
     return {};
 }

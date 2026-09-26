@@ -90,7 +90,7 @@ class ProbeTests(unittest.TestCase):
             db.execute('ALTER TABLE books_settings ADD COLUMN favorite INTEGER DEFAULT 1')
             db.execute('INSERT INTO books_settings SELECT 2,profileid,position,position_ts,cpage,npage,completed,0 FROM books_settings')
 
-    def test_trial_preserves_other_fields_rows_and_backup(self):
+    def test_trial_preserves_other_fields_rows_and_small_audit(self):
         self.prepare_trial()
         with closing(sqlite3.connect(self.explorer)) as db, db:
             before = db.execute('SELECT * FROM books_settings ORDER BY bookid').fetchall()
@@ -102,9 +102,11 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(after[0][:2], before[0][:2])
         self.assertEqual(after[0][4:], before[0][4:])
         self.assertEqual(after[1], before[1])
-        with closing(sqlite3.connect(self.root / 'trial/before.db')) as db, db:
-            self.assertEqual(db.execute('SELECT * FROM books_settings ORDER BY bookid').fetchall(), before)
-        self.assertTrue((self.root / 'trial/committed.txt').exists())
+        self.assertEqual(list((self.root / 'trial').glob('*.db')), [])
+        audit = json.loads((self.root / 'trial/before.json').read_text())
+        self.assertEqual(audit[0]['position'], before[0][2])
+        self.assertEqual(audit[0]['position_ts'], str(before[0][3]))
+        self.assertEqual((self.root / 'trial/outcome.txt').read_text(), 'committed\n')
         self.assertEqual((self.root / 'trial/readest-source-cfi.txt').read_text().strip(),
                          'epubcfi(/6/4[bravo]!/4,/2,/12[BRAVO-05]/1:179)')
 
@@ -122,6 +124,7 @@ class ProbeTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Unrecognized database trigger', result.stderr)
         self.assertEqual(self.explorer.read_bytes(), before)
+        self.assertTrue((self.root / 'trial/outcome.txt').read_text().startswith('rolled back\n'))
 
     def test_trial_rejects_multiple_profiles(self):
         self.prepare_trial()
@@ -144,7 +147,7 @@ class ProbeTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(db.execute('SELECT position FROM books_settings WHERE bookid=1').fetchone()[0], '#' + CFI)
 
-    def test_trial_wal_backup_and_native_completion_trigger(self):
+    def test_trial_wal_update_and_native_completion_trigger(self):
         self.prepare_trial()
         with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('PRAGMA journal_mode=WAL')
@@ -154,8 +157,9 @@ class ProbeTests(unittest.TestCase):
             result = self.run_trial()
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(db.execute('SELECT completed_ts FROM books_settings WHERE bookid=1').fetchone()[0], 123)
-        with closing(sqlite3.connect(self.root / 'trial/before.db')) as db, db:
-            self.assertEqual(db.execute('SELECT position FROM books_settings WHERE bookid=1').fetchone()[0], '#' + CFI)
+        audit = json.loads((self.root / 'trial/before.json').read_text())
+        self.assertEqual(audit[0]['position'], '#' + CFI)
+        self.assertEqual(list((self.root / 'trial').glob('*.db')), [])
 
     def test_multiple_profiles_do_not_guess(self):
         with closing(sqlite3.connect(self.explorer)) as db, db:
@@ -212,8 +216,10 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(after[:2], before[:2])
         self.assertEqual(after[2], 'pbr:/webkit?##epubcfi(/6/4[bravo]!/4/2)')
         self.assertEqual(after[4:], before[4:])
-        with closing(sqlite3.connect(trial / 'before.db')) as db, db:
-            self.assertEqual(db.execute('SELECT * FROM books_settings').fetchone(), before)
+        audit = json.loads((trial / 'before.json').read_text())
+        self.assertEqual(audit[0]['position'], before[2])
+        self.assertEqual(audit[0]['position_ts'], str(before[3]))
+        self.assertEqual(list(trial.glob('*.db')), [])
 
     def test_percentages_are_read_only_and_independent_of_position_format(self):
         def percentage(path=BOOK):
