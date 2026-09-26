@@ -263,6 +263,13 @@ class ProbeTests(unittest.TestCase):
             db.execute('INSERT INTO files SELECT book_id,folder_id,storageid,filename,? FROM files WHERE book_id=3', (b'x' * 16,))
         self.assertEqual(percentages(paths[:4]), [10, -1, -1, 25])
 
+    def test_native_position_keeps_one_snapshot_across_queries(self):
+        with closing(sqlite3.connect(self.explorer)) as db:
+            db.execute('PRAGMA journal_mode=WAL')
+        result = subprocess.run([str(self.binary), 'native-interleaved', str(self.explorer), BOOK],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_native_position_reads_committed_wal_without_writing(self):
         def read(path=BOOK):
             before = self.explorer.read_bytes()

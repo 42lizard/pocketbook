@@ -1,7 +1,23 @@
 #include "probe.h"
 #include <cassert>
 #include <iostream>
+#include <sqlite3.h>
 void sync_checks();
+
+namespace {
+sqlite3* position_writer=nullptr;
+bool position_changed=false;
+int changePositionBetweenQueries(unsigned,void*,void*,void* sql) {
+    if(!position_changed && std::string(static_cast<const char*>(sql)).find("SELECT * FROM books_settings")==0) {
+        assert(sqlite3_exec(position_writer,"UPDATE books_settings SET position_ts=999,cpage=99",nullptr,nullptr,nullptr)==SQLITE_OK);
+        position_changed=true;
+    }
+    return 0;
+}
+int tracePositionRead(sqlite3* db,char**,const sqlite3_api_routines*) {
+    return sqlite3_trace_v2(db,SQLITE_TRACE_STMT,changePositionBetweenQueries,nullptr);
+}
+}
 
 int main(int argc, char** argv) {
     sync_checks();
@@ -18,7 +34,19 @@ int main(int argc, char** argv) {
          "pbr:/word?page=4", "pbr:/webkit?##epubcfi(/6/2!/4/2)\n", "epubcfi(/6/2!/4/2[bad^x])"})
         assert(point_cfi(bad).empty());
     assert(point_cfi(std::string(9000, 'x')).empty());
-    if(argc==4 && std::string(argv[1])=="native-read") {
+    if(argc==4 && std::string(argv[1])=="native-interleaved") {
+        // Register a test-only SQLite observer on the production read connection.
+        // The writer commits after identity was read, before settings are queried.
+        // https://sqlite.org/c3ref/auto_extension.html specifies this entry-point cast.
+        assert(sqlite3_open(argv[2],&position_writer)==SQLITE_OK);
+        assert(sqlite3_auto_extension(reinterpret_cast<void(*)()>(tracePositionRead))==SQLITE_OK);
+        const auto before=readest::native_position(argv[2],argv[3]);
+        sqlite3_reset_auto_extension();
+        assert(position_changed && before.timestamp=="100" && before.progress=="[10,100]");
+        const auto after=readest::native_position(argv[2],argv[3]);
+        assert(after.timestamp=="999" && after.progress=="[99,100]");
+        assert(sqlite3_close(position_writer)==SQLITE_OK);
+    } else if(argc==4 && std::string(argv[1])=="native-read") {
         try {
             const auto position=readest::native_position(argv[2],argv[3]);
             std::cout<<position.indexed<<'\n'<<position.has_settings<<'\n'
