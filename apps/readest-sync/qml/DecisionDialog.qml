@@ -5,15 +5,7 @@ Item {
     objectName: "nativeDecisionDialog"
     required property var shell
     z: 60
-    property var choices: decisionChoices()
-
-    function decisionChoices() {
-        if (!shell.view.decision) return []
-        let result = []
-        for (let action of shell.view.actions || [])
-            if (action.command !== "back") result.push(action)
-        return result
-    }
+    readonly property var choices: shell.view.actionPresentation ? shell.view.actionPresentation.choices : []
 
     Rectangle { anchors.fill: parent; color: "#dddddd"; opacity: 0.92 }
     Rectangle {

@@ -1,5 +1,6 @@
 #pragma once
 #include "application.h"
+#include "book_actions.h"
 #include "cover_loader.h"
 #include "device_adapter.h"
 #include "library_model.h"
@@ -20,6 +21,7 @@ class AppController : public QObject {
     Q_PROPERTY(QString hint READ hint NOTIFY changed)
     Q_PROPERTY(QVariantMap book READ book NOTIFY changed)
     Q_PROPERTY(QVariantList actions READ actions NOTIFY changed)
+    Q_PROPERTY(QVariantMap actionPresentation READ actionPresentation NOTIFY changed)
     Q_PROPERTY(bool decision READ decision NOTIFY changed)
     Q_PROPERTY(bool blocking READ blocking NOTIFY changed)
     Q_PROPERTY(QString blockingMessage READ blockingMessage NOTIFY changed)
@@ -39,6 +41,7 @@ public:
     QString hint() const;
     QVariantMap book() const;
     QVariantList actions() const;
+    QVariantMap actionPresentation() const;
     bool decision() const { return choice_==ChoiceState::SyncConflict || choice_==ChoiceState::OpenConflict; }
     bool blocking() const;
     QString blockingMessage() const;
@@ -69,7 +72,7 @@ private:
     OperationRunner runner_; // Destroy/join the runner before the service.
     VisibleCoverLoader covers_; // Invalidates callbacks before runner destruction.
     readest::BookId selected_;
-    enum class ChoiceState { None, SyncConflict, OpenConflict, LocalCopy };
+    using ChoiceState=BookChoice;
     ChoiceState choice_=ChoiceState::None;
     enum class BlockingState { None, AppliedUnrecorded, NativeCommitUncertain };
     BlockingState blocking_state_=BlockingState::None;
@@ -82,4 +85,5 @@ private:
     void submit(readest::Request request);
     void complete(const readest::Request& request,readest::OperationResult result);
     void prepareCovers();
+    BookActions bookActions() const;
 };

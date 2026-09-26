@@ -99,6 +99,56 @@ static void bookStatusChecks() {
         assert(control.hint().startsWith(expected+". Fixture author\n"));
     }
 }
+static void bookActionChecks() {
+    auto commands=[](const QVariantList& actions) {
+        QStringList result;
+        for(const auto& action:actions) result.append(action.toMap().value("command").toString());
+        return result.join(',');
+    };
+    auto check=[&](const BookActions& actions,const char* allowed,const char* primary,
+                  const char* secondary,const char* menu,const char* choices,bool choosing=false) {
+        assert(commands(actions.allowed)==allowed);
+        assert(actions.primary.value("command").toString()==primary);
+        assert(commands(actions.secondary)==secondary);
+        assert(commands(actions.menu)==menu);
+        assert(commands(actions.choices)==choices);
+        assert(actions.choosing==choosing);
+    };
+    LibraryEntry entry; entry.availability=Availability::OnDevice; entry.book.epubs=1;
+    auto plan=[&](BookChoice choice=BookChoice::None,BookBlock block=BookBlock::None,bool signedIn=true) {
+        return bookActions(entry,signedIn,choice,block);
+    };
+    check(plan(),"open,sync,offline,uploadCover,back","open","sync,offline","uploadCover","");
+    entry.sync.pending_remote="epubcfi(/6/2!/4/2)";
+    assert(plan().primary.value("text")=="Open at Readest position");
+    entry.book.epubs=0;
+    check(plan(),"open,sync,offline,upload,back","open","sync,offline,upload","","");
+    entry.upload_pending=true;
+    check(plan(),"upload,back","upload","","","");
+    assert(plan().primary.value("text")=="Retry upload / reading position");
+    check(plan(BookChoice::SyncConflict),"usePocketBook,useReadest,back","","","","usePocketBook,useReadest");
+    check(plan(BookChoice::OpenConflict),"openPocketBook,openReadest,back","","","","openPocketBook,openReadest");
+    check(plan(BookChoice::None,BookBlock::Pending),"","","","","");
+    check(plan(BookChoice::None,BookBlock::Acknowledged),"sync,back","sync","","","");
+    entry.upload_pending=false; entry.book.local_only=true;
+    check(plan(),"offline,upload,back","offline","upload","","");
+    assert(plan().secondary.front().toMap().value("text")=="Upload to Readest");
+    entry.book.book.deleted=true;
+    assert(plan().secondary.front().toMap().value("text")=="Re-upload to Readest");
+    check(plan(BookChoice::None,BookBlock::None,false),"offline,signin,back","offline","signin","","");
+    entry.book.local_only=false; entry.book.book.deleted=false;
+    entry.book.copies.resize(2);
+    check(plan(),"copies,open,sync,offline,upload,back","copies","open,sync,offline,upload","","");
+    check(plan(BookChoice::LocalCopy),"copy:0,copy:1,back","","copy:0,copy:1","","",true);
+    entry.book.needs_copy_choice=true;
+    check(plan(),"copy:0,copy:1,back","","copy:0,copy:1","","",true);
+    entry.book.needs_copy_choice=false; entry.book.copies.clear();
+    entry.availability=Availability::Downloadable;
+    check(plan(),"download,back","download","","","");
+    entry.availability=Availability::Unknown;
+    check(plan(),"refresh,back","refresh","","","");
+    check(plan(BookChoice::None,BookBlock::Acknowledged),"refresh,back","refresh","","","");
+}
 static void runnerChecks() {
     {
         // An online operation must hold standby off before waking Wi-Fi,
@@ -263,7 +313,7 @@ static void runnerChecks() {
 }
 int main(int argc,char** argv) {
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-    QGuiApplication app(argc,argv); bookStatusChecks(); runnerChecks();
+    QGuiApplication app(argc,argv); bookStatusChecks(); bookActionChecks(); runnerChecks();
     QTemporaryDir temp; assert(temp.isValid());
     auto config=configAt(temp.path());
     std::atomic<int> cover_requests{0};
@@ -520,6 +570,8 @@ int main(int argc,char** argv) {
     assert(control.actions().size()==5);
     auto* detailsPage=window->findChild<QObject*>("nativeBookDetailsPage"); assert(detailsPage);
     assert(window->findChild<QQuickItem*>("nativePrimaryAction")->isVisible());
+    assert(detailsPage->property("primaryAction").toMap()==control.actionPresentation().value("primary").toMap());
+    assert(detailsPage->property("menuActions").toList()==control.actionPresentation().value("menu").toList());
     assert(detailsPage->property("hasMenu").toBool());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(detailsPage->property("menuOpen").toBool());

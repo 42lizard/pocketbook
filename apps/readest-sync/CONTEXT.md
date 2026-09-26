@@ -17,6 +17,10 @@ entry in Readest Sync.
 The displayed summary of a book's availability and relationship to Readest,
 including removal from Readest or a pending upload.
 
+**Book action**:
+An operation offered for a book in its current state, such as opening a local
+copy, downloading an EPUB or choosing which reading position to use.
+
 **PocketBook reading position**:
 The reading location saved by the PocketBook native reader for a device book.
 
