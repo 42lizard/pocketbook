@@ -1,11 +1,10 @@
 import QtQuick
 
-Item {
+ModalSurface {
     id: root
     objectName: "nativeOperationSurface"
     required property var shell
     z: 50
-    Rectangle { anchors.fill: parent; color: "#dddddd"; opacity: 0.92 }
     Rectangle {
         anchors.centerIn: parent
         width: Math.min(parent.width - 2 * shell.metrics.largeGap, 1200 * shell.metrics.scale)
@@ -27,6 +26,7 @@ Item {
                 wrapMode: Text.Wrap
             }
             Rectangle {
+                objectName: "nativeOperationCancel"
                 width: parent.width
                 height: shell.metrics.primaryAction
                 color: cancelTap.pressed ? "black" : "white"

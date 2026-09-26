@@ -1,13 +1,12 @@
 import QtQuick
 
-Item {
+ModalSurface {
     id: root
     objectName: "nativeDecisionDialog"
     required property var shell
     z: 60
     readonly property var choices: shell.view.actionPresentation ? shell.view.actionPresentation.choices : []
 
-    Rectangle { anchors.fill: parent; color: "#dddddd"; opacity: 0.92 }
     Rectangle {
         anchors.centerIn: parent
         width: Math.min(parent.width - 2 * shell.metrics.largeGap, 1200 * shell.metrics.scale)
@@ -33,6 +32,7 @@ Item {
                 model: root.choices
                 delegate: Rectangle {
                     required property var modelData
+                    objectName: "nativeDecisionChoice_" + modelData.command
                     width: dialogColumn.width
                     height: shell.metrics.primaryAction
                     color: choiceTap.pressed ? "black" : "white"
@@ -50,6 +50,7 @@ Item {
                 }
             }
             Rectangle {
+                objectName: "nativeDecisionDismiss"
                 width: parent.width
                 height: shell.metrics.primaryAction
                 color: finalTap.pressed ? "black" : "white"

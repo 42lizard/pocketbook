@@ -9,6 +9,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QMouseEvent>
+#include <QStyleHints>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -43,13 +44,17 @@ static QQuickItem* find_item(QQuickItem* item,const QString& name) {
     for(auto* child:item->childItems()) if(auto* found=find_item(child,name)) return found;
     return nullptr;
 }
-static void tap_book(QQuickWindow* window) {
-    auto* row=find_item(window->contentItem(),"detailedBookRow"); assert(row);
-    const auto point=row->mapToScene(QPointF(row->width()/2,row->height()/2));
+static void tap_item(QQuickWindow* window,QQuickItem* item,int hold=0) {
+    assert(item);
+    const auto point=item->mapToScene(QPointF(item->width()/2,item->height()/2));
     QMouseEvent press(QEvent::MouseButtonPress,point,point,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
     QCoreApplication::sendEvent(window,&press);
+    if(hold) settle(hold);
     QMouseEvent release(QEvent::MouseButtonRelease,point,point,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
     QCoreApplication::sendEvent(window,&release); settle();
+}
+static void tap_book(QQuickWindow* window,int hold=0) {
+    tap_item(window,find_item(window->contentItem(),"detailedBookRow"),hold);
 }
 static ApplicationConfig configAt(const QString& base) {
     ApplicationConfig config;
@@ -552,6 +557,8 @@ int main(int argc,char** argv) {
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(!libraryPage->property("menuOpen").toBool());
     hold_foreground=true; control.refreshLibrary(); settle(); assert(control.busy());
+    tap_book(window,QGuiApplication::styleHints()->mousePressAndHoldInterval()+100);
+    assert(!libraryPage->property("contextOpen").toBool());
     tap_book(window); assert(!control.detail());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(!libraryPage->property("menuOpen").toBool());
@@ -570,6 +577,12 @@ int main(int argc,char** argv) {
         auto view=menuView;
         if(!guard.isEmpty()) view[guard]=true;
         window->setProperty("view",view); settle();
+        if(!guard.isEmpty()) {
+            tap_book(window,QGuiApplication::styleHints()->mousePressAndHoldInterval()+100);
+            assert(!libraryPage->property("contextOpen").toBool());
+            tap_book(window);
+            assert(!libraryPage->property("activating").toBool());
+        }
         for(bool hardware:{false,true}) {
             libraryPage->setProperty("menuOpen",false);
             if(hardware) QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu)));
@@ -578,6 +591,33 @@ int main(int argc,char** argv) {
         }
     }
     window->setProperty("view",QVariant::fromValue(&control)); settle();
+    // Dialog controls must still receive real taps above the shared shield.
+    for(const auto& mode:{QString("busy"),QString("decision"),QString("blocking")}) {
+        auto view=engine.toScriptValue(menuView);
+        view.setProperty(mode,true);
+        view.setProperty("lastCommand",QString());
+        view.setProperty("close",engine.evaluate("(function() { this.lastCommand = 'close'; })"));
+        view.setProperty("cancelDecision",engine.evaluate("(function() { this.lastCommand = 'cancel'; })"));
+        view.setProperty("acknowledgeBlocking",engine.evaluate("(function() { this.lastCommand = 'acknowledge'; })"));
+        view.setProperty("runAction",engine.evaluate("(function(command) { this.lastCommand = command; })"));
+        view.setProperty("actionPresentation",engine.toScriptValue(QVariantMap{{"choices",QVariantList{
+            QVariantMap{{"command","usePocketBook"},{"text","Use PocketBook position"}},
+            QVariantMap{{"command","useReadest"},{"text","Use Readest position"}}}}}));
+        window->setProperty("view",QVariant::fromValue(view)); settle();
+        if(mode=="decision") {
+            for(const auto& command:{QString("usePocketBook"),QString("useReadest")}) {
+                tap_item(window,find_item(window->contentItem(),"nativeDecisionChoice_"+command));
+                assert(view.property("lastCommand").toString()==command);
+            }
+        }
+        tap_item(window,find_item(window->contentItem(),mode=="busy"?"nativeOperationCancel":"nativeDecisionDismiss"));
+        assert(view.property("lastCommand").toString()==(mode=="busy"?"close":mode=="decision"?"cancel":"acknowledge"));
+    }
+    window->setProperty("view",QVariant::fromValue(&control)); settle();
+    tap_book(window,QGuiApplication::styleHints()->mousePressAndHoldInterval()+100);
+    assert(libraryPage->property("contextOpen").toBool());
+    QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
+    assert(!libraryPage->property("contextOpen").toBool());
     libraryPage->setProperty("menuOpen",true); settle();
     assert(window->findChild<QQuickItem*>("nativeLibraryMenu")->isVisible());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
