@@ -27,6 +27,7 @@ readest::ApplicationConfig deviceApplicationConfig() {
     config.root=platform::dataRoot().toStdString();
     config.books_root=QDir::cleanPath(QString::fromStdString(config.root)+"/../../Books/Readest").toStdString();
     config.database=platform::nativeDatabase().toStdString(); config.ca=config.root+"/ca-certificates.crt";
+    config.annotations_database=QDir::cleanPath(QString::fromStdString(config.root)+"/../config/books.db").toStdString();
     config.model=platform::model().toStdString(); config.firmware=platform::firmware().toStdString();
     config.book_roots=platform::bookRoots(); config.public_key=readest::public_anon_key;
     return config;

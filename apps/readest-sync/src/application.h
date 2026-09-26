@@ -6,7 +6,7 @@
 
 namespace readest {
 struct ApplicationConfig {
-    std::string root, books_root, database, ca, model, firmware;
+    std::string root, books_root, database, annotations_database, ca, model, firmware;
     std::vector<std::string> book_roots;
     std::string public_key, auth_origin="https://readest.supabase.co", api_origin="https://web.readest.com";
     HttpTransport transport;

@@ -54,7 +54,7 @@ else()
 endif()
 add_library(readest-core STATIC
   src/application.cpp src/upload.cpp src/cloud.cpp src/download.cpp src/http.cpp src/integrity.cpp src/library.cpp
-  src/position.cpp src/probe.cpp src/progress.cpp src/state.cpp src/sync.cpp
+  src/annotations.cpp src/position.cpp src/probe.cpp src/progress.cpp src/state.cpp src/sync.cpp
   src/vendor/miniz/miniz.c)
 target_compile_definitions(readest-core PUBLIC MINIZ_NO_DEFLATE_APIS MINIZ_NO_ZLIB_APIS)
 target_include_directories(readest-core PUBLIC src)

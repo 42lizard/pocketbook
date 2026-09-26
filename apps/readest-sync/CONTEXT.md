@@ -1,6 +1,6 @@
 # Readest Sync
 
-Readest Sync connects a PocketBook device's books and reading progress with a
+Readest Sync connects a PocketBook device's books, reading progress, and annotations with a
 Readest library.
 
 ## Language
@@ -31,3 +31,10 @@ the same linked book while having different saved reading positions.
 **PocketBook library**:
 The native device library that identifies the EPUBs available for local browsing
 in Readest Sync.
+
+**Annotation**:
+A highlighted passage in a linked EPUB, optionally carrying a written note.
+
+**Annotation conflict**:
+Different changes to the same annotation on PocketBook and Readest since their
+last successful synchronization. Both versions are retained until resolved.

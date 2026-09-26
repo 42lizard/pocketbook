@@ -11,7 +11,19 @@ void sync_checks() {
     const std::string charlie = "epubcfi(/6/6!/4/2/1)";
     const std::string range = "epubcfi(/6/4[bravo]!/4,/2,/12[BRAVO-05]/1:179)";
     assert(readest_start_cfi(range) == bravo);
+    assert(readest_range_cfi(range).first == bravo);
+    assert(readest_range_cfi(range).second == "epubcfi(/6/4[bravo]!/4/12[BRAVO-05]/1:179)");
+    assert(readest_range_cfi(charlie).first.empty());
+    const auto same_node = readest_range_cfi("epubcfi(/6/4[a^,b]!/4/2/1,:3,:9)");
+    assert(same_node.first == "epubcfi(/6/4[a^,b]!/4/2/1:3)");
+    assert(same_node.second == "epubcfi(/6/4[a^,b]!/4/2/1:9)");
+    // Exact endpoints observed on the PocketBook, including an implicit zero offset.
+    const auto native = readest_range_cfi("epubcfi(/6/16!/4,/60/1,/62/1:131)");
+    assert(native.first == "epubcfi(/6/16!/4/60/1)");
+    assert(native.second == "epubcfi(/6/16!/4/62/1:131)");
     assert(readest_start_cfi(charlie) == charlie);
+    assert(readest_start_cfi("#" + charlie).empty());
+    assert(readest_start_cfi("pbr:/webkit?##" + charlie).empty());
     assert(compare_cfi(alpha, bravo) < 0);
     assert(compare_cfi(charlie, bravo) > 0);
     assert(compare_cfi("epubcfi(/6/6[x]!/4/2/1)", charlie) == 0);
@@ -22,7 +34,11 @@ void sync_checks() {
          "epubcfi(/6/4!/4,/2,/4,/6)", "epubcfi(/6/4!/4,/2,/4:-1)",
          "epubcfi(/6/4!/4,/2,/4)junk", "epubcfi(/6/4!/4,/2/1:0[;s=b],/4)",
          "epubcfi(/6/4!/4,/2,/4~1)", "epubcfi(/6/4!/4,/2,/4[broken)",
-         "epubcfi(/6/4!/4:1,/2,/4)", "epubcfi(/6/4!/4,/4,/2)"}) assert(readest_start_cfi(bad).empty());
+         "epubcfi(/6/4!/4:1,/2,/4)", "epubcfi(/6/4!/4,/4,/2)"}) {
+        assert(readest_start_cfi(bad).empty());
+        const auto endpoints = readest_range_cfi(bad);
+        assert(endpoints.first.empty() && endpoints.second.empty());
+    }
 
     SyncPositions p;
     p.local = alpha; p.remote = range;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <atomic>
 #include <vector>
 #include <map>
@@ -11,6 +12,9 @@ namespace readest {
 // A deliberately limited point-CFI syntax check, not an EPUB resolver.
 // Unsupported locations fail closed; no page/percentage fallback.
 std::string point_cfi(const std::string& position);
+// Both endpoints of a supported Readest range, retaining assertions.
+// Empty pair for point CFIs or unsupported syntax; does not resolve the EPUB.
+std::pair<std::string, std::string> readest_range_cfi(const std::string& position);
 // Readest stores visible ranges. Return the start, retaining assertions.
 // Syntax-only: callers must still validate against the original EPUB.
 std::string readest_start_cfi(const std::string& position);

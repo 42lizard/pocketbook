@@ -1,4 +1,5 @@
 #include "application.h"
+#include "annotations.h"
 #include "upload.h"
 #include <stdexcept>
 #include <ctime>
@@ -8,6 +9,7 @@
 #include <sys/resource.h>
 #include <cstdio>
 #include <set>
+#include <chrono>
 
 namespace readest {
 ApplicationService::ApplicationService(ApplicationConfig config):config_(std::move(config)) {
@@ -28,8 +30,10 @@ void ApplicationService::trace(const char* phase) const {
         peak/=1024;
 #endif
         char line[192];
-        const int size=snprintf(line,sizeof(line),"%lld pid=%ld peak_kib=%ld %s\n",
-            static_cast<long long>(time(nullptr)),static_cast<long>(getpid()),peak,phase);
+        const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const int size=snprintf(line,sizeof(line),"%lld pid=%ld peak_kib=%ld mono_ms=%lld %s\n",
+            static_cast<long long>(time(nullptr)),static_cast<long>(getpid()),peak,static_cast<long long>(ms),phase);
         if(size>0 && static_cast<size_t>(size)<sizeof(line)) { const auto written=write(fd,line,size); (void)written; }
     }
     close(fd);
@@ -129,6 +133,17 @@ void ApplicationService::synchronize(const Request& request, OperationResult& re
         transition.outcome==ResumeOutcome::Applied ||
         (request.choice==ProgressChoice::Readest && result.sync_action==SyncAction::ApplyRemote)))
         state_->save_upload(request.book.account,request.book.hash,{});
+    if(!config_.annotations_database.empty() && transition.outcome!=ResumeOutcome::SyncUnavailable &&
+       transition.outcome!=ResumeOutcome::CommitUncertain && transition.outcome!=ResumeOutcome::AppliedUnrecorded) {
+        try { const auto warning=sync_annotations(*cloud_,*state_,verified,native,config_.annotations_database,time(nullptr),config_.model,config_.firmware,cancel);
+            if(!warning.empty()) {if(!result.progress_warning.empty()) result.progress_warning+=" ";result.progress_warning+=warning;}
+        }
+        catch(const std::exception& e) {
+            check_cancel(cancel);
+            if(!result.progress_warning.empty()) result.progress_warning+=" ";
+            result.progress_warning+="Annotations: "+std::string(e.what());
+        }
+    }
     switch(transition.outcome) {
     case ResumeOutcome::NotRequested: case ResumeOutcome::Blocked: return;
     case ResumeOutcome::NoPending: break;

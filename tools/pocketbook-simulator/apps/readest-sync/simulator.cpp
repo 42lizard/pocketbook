@@ -38,9 +38,10 @@ void writeFile(const QString& path,const QByteArray& bytes) {
         throw std::runtime_error("Cannot save simulator data");
 }
 QString cfi(int chapter) { return QString("epubcfi(/6/%1!/4/2)").arg(chapter*2); }
-void sql(const char* statement,const QStringList& values={}) {
+void sql(const char* statement,const QStringList& values={},bool annotations=false) {
     sqlite3* raw=nullptr;
-    if(sqlite3_open(platform::nativeDatabase().toUtf8().constData(),&raw)!=SQLITE_OK) {
+    const auto database=annotations?storage()+"/system/config/books.db":platform::nativeDatabase();
+    if(sqlite3_open(database.toUtf8().constData(),&raw)!=SQLITE_OK) {
         if(raw) sqlite3_close(raw);
         throw std::runtime_error("Cannot open simulated reading database");
     }
@@ -94,11 +95,18 @@ void Simulator::prepare() {
     prepareStorage();
     const auto base=storage();
     QDir data(storage());
-    if(!data.mkpath("system/readest-sync") || !data.mkpath("system/explorer-3") || !data.mkpath("Books/Readest"))
+    if(!data.mkpath("system/readest-sync") || !data.mkpath("system/explorer-3") || !data.mkpath("system/config") || !data.mkpath("Books/Readest"))
         throw std::runtime_error("Cannot create simulator storage");
     sql("CREATE TABLE IF NOT EXISTS folders(id INTEGER PRIMARY KEY, storageid INTEGER, name TEXT)");
     sql("CREATE TABLE IF NOT EXISTS files(book_id INTEGER PRIMARY KEY, folder_id INTEGER, storageid INTEGER, filename TEXT, fast_hash BLOB)");
     sql("CREATE TABLE IF NOT EXISTS books_settings(bookid INTEGER PRIMARY KEY, profileid INTEGER, position TEXT, position_ts INTEGER, cpage INTEGER, npage INTEGER, completed INTEGER)");
+    for(const auto* statement:{
+        "CREATE TABLE IF NOT EXISTS TypeNames(OID INTEGER PRIMARY KEY,TypeName TEXT UNIQUE)",
+        "CREATE TABLE IF NOT EXISTS TagNames(OID INTEGER PRIMARY KEY,TagName TEXT UNIQUE)",
+        "CREATE TABLE IF NOT EXISTS Items(OID INTEGER PRIMARY KEY,ParentID INTEGER,TypeID INTEGER,State INTEGER DEFAULT 0,TimeAlt INTEGER,HashUUID TEXT)",
+        "CREATE TABLE IF NOT EXISTS Tags(OID INTEGER PRIMARY KEY,ItemID INTEGER REFERENCES Items(OID),TagID INTEGER REFERENCES TagNames(OID),Val TEXT,TimeEdt INTEGER,UNIQUE(ItemID,TagID))",
+        "INSERT OR IGNORE INTO TypeNames VALUES(0,'type.book'),(4,'obj.book_mark')",
+        "INSERT OR IGNORE INTO TagNames VALUES(101,'bm.book_mark'),(102,'bm.type'),(104,'bm.quotation'),(105,'bm.note'),(106,'bm.color')"}) sql(statement,{},true);
     if(realCloud()) {
         // Reuse the system trust store; never disable TLS verification.
         const auto certificates=qEnvironmentVariable("READEST_SIM_CA","/etc/ssl/certs/ca-certificates.crt");
@@ -151,7 +159,9 @@ bool Simulator::open(const QString& path) {
         for(int i=2;i<=3;++i) if(!position.cfi.empty() && readest::compare_cfi(position.cfi,cfi(i).toStdString())>=0) chapter_=i;
         const auto number=QString::number(id);
         sql("INSERT OR REPLACE INTO folders VALUES(?,1,?)",{number,QFileInfo(path).absolutePath()});
-        sql("INSERT OR REPLACE INTO files VALUES(?,?,1,?,zeroblob(16))",{number,number,QFileInfo(path).fileName()});
+        sql(("INSERT OR REPLACE INTO files VALUES(?,?,1,?,X'"+hash+"')").toUtf8().constData(),{number,number,QFileInfo(path).fileName()});
+        sql("INSERT INTO Items(ParentID,TypeID,State,TimeAlt,HashUUID) SELECT NULL,0,0,0,? WHERE NOT EXISTS(SELECT 1 FROM Items WHERE HashUUID=?)",
+            {hash.toUpper(),hash.toUpper()},true);
         path_=path; lastHash_=hash; saveChapter();
         emit changed(); return true;
     } catch(const std::exception& error) { path_.clear(); report(QString::fromUtf8(error.what())); return false; }

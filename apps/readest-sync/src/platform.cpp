@@ -16,7 +16,12 @@ std::vector<std::string> bookRoots() { return {"/mnt/ext1", "/mnt/ext2"}; }
 int wakeNetwork() { return WiFiPower(1); }
 int connectNetwork(int (*callback)(int)) { return NetConnectAsync(callback); }
 void pingNetwork() { NetMgrPing(); }
-void keepAwake(bool active) { iv_sleepmode(active?0:1); }
+void keepAwake(bool active) {
+    // Qt renders queued changes after the operation's completion callback.
+    // Allow that frame and native controls' 200 ms release timers to finish.
+    if(!active) BanSleep(1);
+    iv_sleepmode(active?0:1);
+}
 bool networkReady() {
     static int previous_flags=-1,previous_route=-1;
     if(previous_flags==-1) networkTrace("ready.first-probe");

@@ -23,7 +23,7 @@ private:
     void saveRemote(); // Caller holds remoteMutex once published to other threads.
     QString root;
     QJsonArray books,files;
-    QJsonObject configs;
+    QJsonObject configs,notes;
     QMap<QString,QByteArray> objects;
     mutable QMutex remoteMutex;
     std::atomic<int> transferMode{0};

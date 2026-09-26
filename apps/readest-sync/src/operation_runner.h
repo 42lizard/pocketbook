@@ -22,7 +22,7 @@ private:
     QTimer timer_;
     std::thread worker_;
     std::atomic<bool> cancelled_{false},done_{false};
-    bool busy_=false,connecting_=false,online_=false;
+    bool busy_=false,connecting_=false,online_=false,awake_=false;
     std::shared_ptr<Connection> connection_;
     Clock::time_point deadline_,next_ping_;
     Task task_;
