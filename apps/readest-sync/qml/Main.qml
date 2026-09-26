@@ -23,13 +23,17 @@ Window {
 
     NativeMetrics { id: nativeMetrics; viewportWidth: window.width; viewportHeight: window.height }
 
+    function toggleMenu() {
+        if (!view.busy && !view.decision && !view.blocking &&
+                pageLoader.item && pageLoader.item.toggleMenu &&
+                (window.libraryActive || pageLoader.item.hasMenu))
+            pageLoader.item.toggleMenu()
+    }
+
     function handleHardwareButton(key) {
         const normalizedKey = Number(key)
         if (normalizedKey === Qt.Key_Menu) {
-            if (!view.busy && !view.decision && !view.blocking &&
-                    pageLoader.item && pageLoader.item.toggleMenu &&
-                    (window.libraryActive || pageLoader.item.hasMenu))
-                pageLoader.item.toggleMenu()
+            window.toggleMenu()
             return
         }
         if (pageLoader.item && pageLoader.item.handleKey && pageLoader.item.handleKey(normalizedKey)) return
@@ -40,13 +44,14 @@ Window {
 
     NativeHeader {
         id: header
+        objectName: "nativeHeader"
         width: parent.width
         height: window.metrics.chrome
         title: window.view.detail ? "BOOK INFO / " + (window.view.title || "Untitled") : window.view.title || "Readest Sync"
         showBack: window.view.detail || window.view.signingIn
         actionText: window.libraryActive || (pageLoader.item && pageLoader.item.hasMenu) ? "Menu" : ""
         onBack: window.handleHardwareButton(Qt.Key_Back)
-        onAction: if (pageLoader.item && pageLoader.item.toggleMenu) pageLoader.item.toggleMenu()
+        onAction: window.toggleMenu()
         onClose: window.view.close()
     }
     FocusScope {

@@ -5,34 +5,15 @@ Item {
     objectName: "nativeBookDetailsPage"
     required property var shell
     property var details: shell.view.book || ({})
-    property var availableActions: shell.view.actions || []
+    readonly property var actionPresentation: shell.view.actionPresentation || ({})
     property bool menuOpen: false
     property bool activating: false
-    readonly property bool choosing: availableActions.length > 0 && availableActions[0].command.indexOf("copy:") === 0
-    readonly property bool conflict: shell.view.decision
-    readonly property var primaryAction: choosing || conflict ? null : firstContentAction()
-    readonly property var secondaryActions: contentActions(false)
-    readonly property var menuActions: contentActions(true)
+    readonly property bool choosing: actionPresentation.choosing || false
+    readonly property var primaryAction: actionPresentation.primary || null
+    readonly property var secondaryActions: actionPresentation.secondary || []
+    readonly property var menuActions: actionPresentation.menu || []
     readonly property bool hasMenu: menuActions.length > 0
 
-    function firstContentAction() {
-        for (let action of availableActions)
-            if (action.command !== "back" && action.command !== "uploadCover") return action
-        return null
-    }
-    function contentActions(menu) {
-        let result = []
-        if (conflict) return result
-        for (let action of availableActions) {
-            if (action.command === "back") continue
-            if (menu) {
-                if (action.command === "uploadCover") result.push(action)
-            } else if (choosing || action.command !== (primaryAction ? primaryAction.command : "")) {
-                if (action.command !== "uploadCover") result.push(action)
-            }
-        }
-        return result
-    }
     function run(command) {
         if (activating) return
         activating = true
@@ -144,8 +125,7 @@ Item {
                 width: parent.width - 2 * shell.metrics.largeGap
                 x: shell.metrics.largeGap
                 height: shell.metrics.menuRow
-                text: root.availableActions[0] && root.availableActions[0].command.indexOf("copy:") === 0 ?
-                    "CHOOSE LOCAL COPY" : "CHOOSE READING POSITION"
+                text: "CHOOSE LOCAL COPY"
                 verticalAlignment: Text.AlignVCenter
                 font.pixelSize: shell.metrics.smallFont
                 font.bold: true

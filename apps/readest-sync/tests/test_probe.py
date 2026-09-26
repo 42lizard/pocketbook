@@ -263,6 +263,44 @@ class ProbeTests(unittest.TestCase):
             db.execute('INSERT INTO files SELECT book_id,folder_id,storageid,filename,? FROM files WHERE book_id=3', (b'x' * 16,))
         self.assertEqual(percentages(paths[:4]), [10, -1, -1, 25])
 
+    def test_native_position_keeps_one_snapshot_across_queries(self):
+        with closing(sqlite3.connect(self.explorer)) as db:
+            db.execute('PRAGMA journal_mode=WAL')
+        result = subprocess.run([str(self.binary), 'native-interleaved', str(self.explorer), BOOK],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_native_position_reads_committed_wal_without_writing(self):
+        def read(path=BOOK):
+            before = self.explorer.read_bytes()
+            wal_path = Path(str(self.explorer) + '-wal')
+            wal = wal_path.read_bytes()
+            result = subprocess.run([str(self.binary), 'native-read', str(self.explorer), path],
+                                    capture_output=True, text=True)
+            self.assertEqual(self.explorer.read_bytes(), before)
+            self.assertEqual(wal_path.read_bytes(), wal)
+            return result
+        with closing(sqlite3.connect(self.explorer)) as db:
+            db.execute('PRAGMA journal_mode=WAL')
+            db.execute('UPDATE books_settings SET position_ts=765,cpage=25')
+            db.commit()
+            self.assertEqual(read().stdout.splitlines(), ['1', '1', '765', '[25,100]'])
+            db.execute('UPDATE books_settings SET position_ts=900,cpage=30')
+            # An active writer cannot leak uncommitted settings into a read.
+            self.assertEqual(read().stdout.splitlines(), ['1', '1', '765', '[25,100]'])
+            db.commit()
+            self.assertEqual(read().stdout.splitlines(), ['1', '1', '900', '[30,100]'])
+            self.assertEqual(read('/missing.epub').stdout.splitlines()[:2], ['0', '0'])
+            db.execute('INSERT INTO books_settings SELECT bookid,2,position,position_ts,cpage,npage,completed FROM books_settings')
+            db.commit()
+            self.assertIn('Multiple native reading profiles', read().stderr)
+            db.execute('DELETE FROM books_settings')
+            db.commit()
+            self.assertEqual(read().stdout.splitlines()[:2], ['1', '0'])
+            db.execute('INSERT INTO files SELECT book_id+1,folder_id,storageid,filename,fast_hash FROM files')
+            db.commit()
+            self.assertIn('Ambiguous native book identity', read().stderr)
+
     def test_native_transactional_snapshot_includes_wal(self):
         with closing(sqlite3.connect(self.explorer)) as db, db:
             db.execute('PRAGMA journal_mode=WAL')

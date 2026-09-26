@@ -121,55 +121,15 @@ QVariantMap AppController::book() const {
         {"pocketBookProgress",percentageLabel(entry->local_percentage)},
         {"readestProgress",percentageLabel(entry->remote_percentage)}};
 }
-QVariantList AppController::actions() const {
-    QVariantList result;
-    if(busy()) return result;
-    auto add=[&](const char* command,const QString& text) { result.append(QVariantMap{{"command",command},{"text",text}}); };
-    const auto* entry=library_.find(selected_); if(!entry) return result;
-    if(blocking_state_!=BlockingState::None && selected_==blocking_book_) {
-        if(!blocking_acknowledged_) return result;
-        add(entry->availability==Availability::OnDevice?"sync":"refresh",
-            entry->availability==Availability::OnDevice?"Sync now":"Check availability");
-        add("back","Back to library"); return result;
-    }
-    if(entry->book.needs_copy_choice || choice_==ChoiceState::LocalCopy) {
-        for(size_t i=0;i<entry->book.copies.size();++i) {
-            const auto& copy=entry->book.copies[i];
-            const auto command="copy:"+std::to_string(i);
-            add(command.c_str(),QString::fromStdString(copy.path)+" · "+percentageLabel(copy.percentage));
-        }
-        add("back","Back to library");return result;
-    }
-    if(choice_==ChoiceState::OpenConflict) {
-        add("openPocketBook","Open at PocketBook position"); add("openReadest","Open at Readest position");
-        add("back","Back to library"); return result;
-    }
-    if(choice_==ChoiceState::SyncConflict) {
-        add("usePocketBook","Use PocketBook position"); add("useReadest","Use Readest position");
-        add("back","Back to library"); return result;
-    }
-    if(entry->upload_pending && signed_in_) {
-        add("upload","Retry upload / reading position"); add("back","Back to library"); return result;
-    }
-    if(entry->book.local_only || entry->book.book.deleted || !signed_in_) {
-        add("offline","Open at PocketBook position");
-        if(signed_in_) add("upload",entry->book.book.deleted?"Re-upload to Readest":entry->upload_pending?"Retry upload":"Upload to Readest");
-        else add("signin","Sign in to upload");
-        if(entry->book.copies.size()>1) add("copies","Choose local copy");
-        add("back","Back to library");return result;
-    }
-    if(entry->book.copies.size()>1) add("copies","Choose local copy");
-    if(entry->availability==Availability::OnDevice) {
-        add("open",entry->sync.pending_remote.empty()?"Open":"Open at Readest position");
-        add("sync","Sync now"); add("offline","Read offline");
-    } else if(entry->availability==Availability::Downloadable) add("download","Download EPUB");
-    else add("refresh","Check availability");
-    if(entry->availability==Availability::OnDevice && entry->book.epubs==0)
-        add("upload","Upload EPUB to Readest");
-    if(entry->availability==Availability::OnDevice && entry->book.epubs>0)
-        add("uploadCover","Upload cover to Readest");
-    add("back","Back to library"); return result;
+BookActions AppController::bookActions() const {
+    const auto* entry=library_.find(selected_);
+    if(busy() || !entry) return {};
+    const auto block=blocking_state_!=BlockingState::None && selected_==blocking_book_
+        ?(blocking_acknowledged_?BookBlock::Acknowledged:BookBlock::Pending):BookBlock::None;
+    return ::bookActions(*entry,signed_in_,choice_,block);
 }
+QVariantList AppController::actions() const { return bookActions().allowed; }
+QVariantMap AppController::actionPresentation() const { return bookActions().presentation(); }
 void AppController::submit(Request request) {
     if(runner_.busy()) {
         if(covers_.active()) { pending_request_=std::make_unique<Request>(std::move(request)); covers_.show({}); emit changed(); }

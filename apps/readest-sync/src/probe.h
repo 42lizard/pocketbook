@@ -54,9 +54,10 @@ struct NativePosition {
     std::string progress;
     bool indexed = false, has_settings = false;
 };
-// Read an app-owned snapshot after validating the managed EPUB bytes.
+// Read identity and settings in one short, read-only transaction on the live
+// database after validating the managed EPUB bytes. No database copy is needed.
 // Missing settings require a normal first Open before applying remote progress.
-NativePosition native_position(const std::string& snapshot, const std::string& book_path);
+NativePosition native_position(const std::string& database, const std::string& book_path);
 // Display-only page ratios from the live database; independent of CFI support.
 // Missing or ambiguous profiles and invalid page counts are omitted.
 std::map<std::string,double> native_percentages(const std::string& database,

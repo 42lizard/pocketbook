@@ -314,8 +314,8 @@ std::vector<NativeBook> native_books(const std::string& database) {
     });
     transaction.commit(); return result;
 }
-NativePosition native_position(const std::string& snapshot, const std::string& book_path) {
-    Database db(snapshot);
+NativePosition native_position(const std::string& database, const std::string& book_path) {
+    Database db(database); ReadTransaction transaction(db);
     NativePosition result; result.book_path=book_path;
     auto ids=query(db,native_identify,path_parameters(book_path));
     if(json_object_array_length(ids.get())==0) return result;
@@ -341,6 +341,7 @@ NativePosition native_position(const std::string& snapshot, const std::string& b
     } catch(const std::exception&) { /* Unknown counts do not block position sync. */ }
     if(result.profile_id.empty() || (!result.raw_position.empty() && result.cfi.empty()))
         throw UnsupportedNativePosition("Unsupported native saved position");
+    transaction.commit();
     return result;
 }
 std::map<std::string,double> native_percentages(const std::string& database,

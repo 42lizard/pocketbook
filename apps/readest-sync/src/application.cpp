@@ -75,13 +75,6 @@ ManagedBook ApplicationService::resolve(const BookId& id) {
     }
     throw std::runtime_error("This book is no longer in the library.");
 }
-NativePosition ApplicationService::capture(const std::string& path) {
-    const auto file=config_.root+"/capture-"+std::to_string(getpid())+"-"+std::to_string(++sequence_)+".db";
-    try {
-        backup_native_database(config_.database,file);
-        auto result=native_position(file,path); unlink(file.c_str()); return result;
-    } catch(...) { unlink(file.c_str()); throw; }
-}
 LibrarySnapshot ApplicationService::snapshot() {
     trace("snapshot.begin");
     LibrarySnapshot result; result.initialized=bool(state_ && cloud_);
@@ -123,7 +116,7 @@ void ApplicationService::synchronize(const Request& request, OperationResult& re
     if(book.book.deleted) throw std::runtime_error("Removed from Readest. Re-upload this book or read offline.");
     if(book.local_only) throw std::runtime_error("Upload this book to Readest before synchronizing.");
     state_->remember_integrity(book);
-    const auto native=capture(book.path);
+    const auto native=native_position(config_.database,book.path);
     const bool open=request.command==Command::Open;
     const auto audit=config_.root+"/native-"+std::to_string(time(nullptr))+"-"+std::to_string(getpid())+"-"+std::to_string(++sequence_);
     const auto transition=transition_progress(*cloud_,*state_,verified,native,time(nullptr),request.choice,request.revision,
@@ -232,7 +225,7 @@ OperationResult ApplicationService::execute(const Request& request,const std::at
                     const VerifiedManagedBook verified(resolve(request.book));
                     state_->remember_integrity(verified.book());
                     UploadPosition position;
-                    try {position.native=capture(verified.book().path);}
+                    try {position.native=native_position(config_.database,verified.book().path);}
                     catch(const UnsupportedNativePosition& e) {position.error=e.what();position.unsupported=true;}
                     catch(const std::exception& e) {position.error=e.what();}
                     const auto uploaded=upload_book(*cloud_,*state_,verified,position,config_.transport,config_.ca,config_.root,cancel);

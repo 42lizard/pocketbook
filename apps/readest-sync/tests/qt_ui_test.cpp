@@ -8,6 +8,7 @@
 #include <QThread>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QMouseEvent>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -36,6 +37,19 @@ static int count_named(QQuickItem* item,const QString& name) {
     int count=item->objectName()==name;
     for(auto* child:item->childItems()) count+=count_named(child,name);
     return count;
+}
+static QQuickItem* find_item(QQuickItem* item,const QString& name) {
+    if(item->objectName()==name) return item;
+    for(auto* child:item->childItems()) if(auto* found=find_item(child,name)) return found;
+    return nullptr;
+}
+static void tap_book(QQuickWindow* window) {
+    auto* row=find_item(window->contentItem(),"detailedBookRow"); assert(row);
+    const auto point=row->mapToScene(QPointF(row->width()/2,row->height()/2));
+    QMouseEvent press(QEvent::MouseButtonPress,point,point,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+    QCoreApplication::sendEvent(window,&press);
+    QMouseEvent release(QEvent::MouseButtonRelease,point,point,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+    QCoreApplication::sendEvent(window,&release); settle();
 }
 static ApplicationConfig configAt(const QString& base) {
     ApplicationConfig config;
@@ -98,6 +112,56 @@ static void bookStatusChecks() {
         assert(control.book().value("availability").toString()==expected);
         assert(control.hint().startsWith(expected+". Fixture author\n"));
     }
+}
+static void bookActionChecks() {
+    auto commands=[](const QVariantList& actions) {
+        QStringList result;
+        for(const auto& action:actions) result.append(action.toMap().value("command").toString());
+        return result.join(',');
+    };
+    auto check=[&](const BookActions& actions,const char* allowed,const char* primary,
+                  const char* secondary,const char* menu,const char* choices,bool choosing=false) {
+        assert(commands(actions.allowed)==allowed);
+        assert(actions.primary.value("command").toString()==primary);
+        assert(commands(actions.secondary)==secondary);
+        assert(commands(actions.menu)==menu);
+        assert(commands(actions.choices)==choices);
+        assert(actions.choosing==choosing);
+    };
+    LibraryEntry entry; entry.availability=Availability::OnDevice; entry.book.epubs=1;
+    auto plan=[&](BookChoice choice=BookChoice::None,BookBlock block=BookBlock::None,bool signedIn=true) {
+        return bookActions(entry,signedIn,choice,block);
+    };
+    check(plan(),"open,sync,offline,uploadCover,back","open","sync,offline","uploadCover","");
+    entry.sync.pending_remote="epubcfi(/6/2!/4/2)";
+    assert(plan().primary.value("text")=="Open at Readest position");
+    entry.book.epubs=0;
+    check(plan(),"open,sync,offline,upload,back","open","sync,offline,upload","","");
+    entry.upload_pending=true;
+    check(plan(),"upload,back","upload","","","");
+    assert(plan().primary.value("text")=="Retry upload / reading position");
+    check(plan(BookChoice::SyncConflict),"usePocketBook,useReadest,back","","","","usePocketBook,useReadest");
+    check(plan(BookChoice::OpenConflict),"openPocketBook,openReadest,back","","","","openPocketBook,openReadest");
+    check(plan(BookChoice::None,BookBlock::Pending),"","","","","");
+    check(plan(BookChoice::None,BookBlock::Acknowledged),"sync,back","sync","","","");
+    entry.upload_pending=false; entry.book.local_only=true;
+    check(plan(),"offline,upload,back","offline","upload","","");
+    assert(plan().secondary.front().toMap().value("text")=="Upload to Readest");
+    entry.book.book.deleted=true;
+    assert(plan().secondary.front().toMap().value("text")=="Re-upload to Readest");
+    check(plan(BookChoice::None,BookBlock::None,false),"offline,signin,back","offline","signin","","");
+    entry.book.local_only=false; entry.book.book.deleted=false;
+    entry.book.copies.resize(2);
+    check(plan(),"copies,open,sync,offline,upload,back","copies","open,sync,offline,upload","","");
+    check(plan(BookChoice::LocalCopy),"copy:0,copy:1,back","","copy:0,copy:1","","",true);
+    entry.book.needs_copy_choice=true;
+    check(plan(),"copy:0,copy:1,back","","copy:0,copy:1","","",true);
+    entry.book.needs_copy_choice=false; entry.book.copies.clear();
+    entry.availability=Availability::Downloadable;
+    check(plan(),"download,back","download","","","");
+    entry.availability=Availability::Unknown;
+    check(plan(),"refresh,back","refresh","","","");
+    check(plan(BookChoice::None,BookBlock::Acknowledged),"refresh,back","refresh","","","");
 }
 static void runnerChecks() {
     {
@@ -263,7 +327,7 @@ static void runnerChecks() {
 }
 int main(int argc,char** argv) {
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-    QGuiApplication app(argc,argv); bookStatusChecks(); runnerChecks();
+    QGuiApplication app(argc,argv); bookStatusChecks(); bookActionChecks(); runnerChecks();
     QTemporaryDir temp; assert(temp.isValid());
     auto config=configAt(temp.path());
     std::atomic<int> cover_requests{0};
@@ -476,15 +540,44 @@ int main(int argc,char** argv) {
         if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
             assert(picture.save(output+(wide?"-landscape.png":"-portrait.png")));
     }
-    auto* libraryPage=window->findChild<QObject*>("nativeLibraryPage"); assert(libraryPage);
+    auto* libraryPage=find_item(window->contentItem(),"nativeLibraryPage"); assert(libraryPage);
+    for(int attempt=0;attempt<3;++attempt) {
+        tap_book(window);
+        assert(control.detail() && find_item(window->contentItem(),"nativeBookDetailsPage"));
+        control.back(); settle();
+    }
+    libraryPage=find_item(window->contentItem(),"nativeLibraryPage"); assert(libraryPage);
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(libraryPage->property("menuOpen").toBool());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(!libraryPage->property("menuOpen").toBool());
     hold_foreground=true; control.refreshLibrary(); settle(); assert(control.busy());
+    tap_book(window); assert(!control.detail());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(!libraryPage->property("menuOpen").toBool());
     hold_foreground=false; finish(control);
+    tap_book(window);
+    assert(control.detail() && find_item(window->contentItem(),"nativeBookDetailsPage"));
+    control.back(); settle();
+    libraryPage=find_item(window->contentItem(),"nativeLibraryPage"); assert(libraryPage);
+    auto* header=window->findChild<QObject*>("nativeHeader"); assert(header);
+    // The same shell receives Menu from both the header and hardware.
+    QVariantMap menuView{{"initialized",true},{"signingIn",false},{"detail",false},
+        {"busy",false},{"decision",false},{"blocking",false},{"signedIn",true},
+        {"title","Readest Sync"},{"status",""},{"statusKind","none"},{"blockingMessage",""},
+        {"actions",QVariantList{}},{"library",QVariant::fromValue(control.library())}};
+    for(const auto& guard:{QString(),QString("busy"),QString("decision"),QString("blocking")}) {
+        auto view=menuView;
+        if(!guard.isEmpty()) view[guard]=true;
+        window->setProperty("view",view); settle();
+        for(bool hardware:{false,true}) {
+            libraryPage->setProperty("menuOpen",false);
+            if(hardware) QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu)));
+            else QMetaObject::invokeMethod(header,"action");
+            assert(libraryPage->property("menuOpen").toBool()==guard.isEmpty());
+        }
+    }
+    window->setProperty("view",QVariant::fromValue(&control)); settle();
     libraryPage->setProperty("menuOpen",true); settle();
     assert(window->findChild<QQuickItem*>("nativeLibraryMenu")->isVisible());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
@@ -500,8 +593,10 @@ int main(int argc,char** argv) {
     window->resize(1404,1800); settle();
     control.selectBook("fixture-user",QString::fromStdString(first_hash)); settle();
     assert(control.actions().size()==5);
-    auto* detailsPage=window->findChild<QObject*>("nativeBookDetailsPage"); assert(detailsPage);
-    assert(window->findChild<QQuickItem*>("nativePrimaryAction")->isVisible());
+    auto* detailsPage=find_item(window->contentItem(),"nativeBookDetailsPage"); assert(detailsPage);
+    assert(find_item(window->contentItem(),"nativePrimaryAction")->isVisible());
+    assert(detailsPage->property("primaryAction").toMap()==control.actionPresentation().value("primary").toMap());
+    assert(detailsPage->property("menuActions").toList()==control.actionPresentation().value("menu").toList());
     assert(detailsPage->property("hasMenu").toBool());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(detailsPage->property("menuOpen").toBool());
@@ -510,7 +605,7 @@ int main(int argc,char** argv) {
     if(const auto output=qEnvironmentVariable("READEST_UI_PREVIEW"); !output.isEmpty())
         assert(window->grabWindow().save(output+"-detail-portrait.png"));
     QMetaObject::invokeMethod(detailsPage,"toggleMenu"); settle();
-    assert(window->findChild<QQuickItem*>("nativeBookMenu")->isVisible());
+    assert(find_item(window->contentItem(),"nativeBookMenu")->isVisible());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
     assert(control.detail() && !detailsPage->property("menuOpen").toBool());
     window->resize(1800,1404); settle(); assert(control.detail() && window->findChild<QObject*>("nativeBookDetailsPage"));

@@ -226,6 +226,9 @@ Matches and candidate-index updates are each committed as a batch.
 
 The library snapshot loads saved sync metadata in one query and native percentages
 in one grouped query. Cover checks read headers rather than whole image files.
+Sync, Open and Upload read the PocketBook reading position directly in a short,
+read-only transaction that keeps identity and settings consistent, including WAL
+changes. They no longer copy the native database to a temporary capture file.
 The scale regression uses 500 valid EPUBs totaling roughly 500 MiB and checks
 content-read/validation counts, cache persistence, path invalidation and new cloud
 matches. It prints host timings as diagnostics; these are not device timings.
