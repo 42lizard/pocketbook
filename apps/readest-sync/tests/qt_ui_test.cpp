@@ -485,6 +485,24 @@ int main(int argc,char** argv) {
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu))); settle();
     assert(!libraryPage->property("menuOpen").toBool());
     hold_foreground=false; finish(control);
+    auto* header=window->findChild<QObject*>("nativeHeader"); assert(header);
+    // The same shell receives Menu from both the header and hardware.
+    QVariantMap menuView{{"initialized",true},{"signingIn",false},{"detail",false},
+        {"busy",false},{"decision",false},{"blocking",false},{"signedIn",true},
+        {"title","Readest Sync"},{"status",""},{"statusKind","none"},{"blockingMessage",""},
+        {"actions",QVariantList{}},{"library",QVariant::fromValue(control.library())}};
+    for(const auto& guard:{QString(),QString("busy"),QString("decision"),QString("blocking")}) {
+        auto view=menuView;
+        if(!guard.isEmpty()) view[guard]=true;
+        window->setProperty("view",view); settle();
+        for(bool hardware:{false,true}) {
+            libraryPage->setProperty("menuOpen",false);
+            if(hardware) QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Menu)));
+            else QMetaObject::invokeMethod(header,"action");
+            assert(libraryPage->property("menuOpen").toBool()==guard.isEmpty());
+        }
+    }
+    window->setProperty("view",QVariant::fromValue(&control)); settle();
     libraryPage->setProperty("menuOpen",true); settle();
     assert(window->findChild<QQuickItem*>("nativeLibraryMenu")->isVisible());
     QMetaObject::invokeMethod(window,"handleHardwareButton",Q_ARG(QVariant,QVariant(Qt::Key_Back))); settle();
