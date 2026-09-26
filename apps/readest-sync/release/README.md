@@ -24,6 +24,28 @@ computer. On Linux, if necessary, mark the copied `.app` executable with `chmod 
 
 To undo an update, close the app and restore the two backed-up files by USB.
 
+## Use
+
+Sign in, choose **Menu → Refresh library**, and select a book. Download its EPUB
+if needed. **Open** synchronizes before opening the native reader; **Read offline**
+uses the current PocketBook position without contacting Readest. **Sync now**
+reconciles reading progress, highlights and attached notes for that book.
+
+Highlights and attached notes are created/edited in PocketBook or Readest, not
+inside this app. Their edits and deletions synchronize in both directions on the
+validated firmware. Unsupported annotations or conflicting edits produce a
+warning; reading-position choices do not resolve annotation conflicts.
+
+Existing PocketBook books appear in the library without signing in. Use **Scan
+device** to refresh the app's inventory from the native library index and **Upload to Readest** to transfer
+a device-only EPUB. The original file stays in place.
+
+The [online user guide](https://github.com/42lizard/pocketbook/blob/main/apps/readest-sync/docs/USER-GUIDE.md)
+contains mock-simulator screenshots and explains the actions and limitations.
+
+Restoring an older executable does not undo reading positions or annotations
+already synchronized to PocketBook or Readest.
+
 ## Checksums and build identity
 
 The accompanying `.zip.sha256` file verifies the ZIP download. For example,
@@ -34,7 +56,7 @@ identifies the app version and exact source commit.
 
 CI checks compilation, the ARM ABI, and automated tests. A draft release still
 needs device validation before publication, including startup, login, refresh,
-download, and progress sync. No live account credentials are used in CI.
+download, progress sync, and annotation edits/deletions in both directions. No live account credentials are used in CI.
 
 ## Licenses
 

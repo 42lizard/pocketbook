@@ -5,8 +5,8 @@ and QML shims. This directory contains only Readest-specific mock cloud fixtures
 reader/progress simulation, HTTPS routing and integration tests.
 
 In **Mock cloud**, sign in to the demo account and refresh the library. It has
-51 distinct generated EPUB identities: nine portrait pages or thirteen landscape
-pages. Some entries have position data only, multiple EPUBs, or no cover. Covers
+51 distinct generated EPUB identities: seven portrait pages or nine landscape
+pages at the default sizes. Some entries have position data only, multiple EPUBs, or no cover. Covers
 include PNG and JPEG stored as `cover.png`. Book 01 always has one EPUB.
 
 ## Reading and conflict scenario
@@ -16,7 +16,7 @@ include PNG and JPEG stored as `cover.png`. Book 01 always has one EPUB.
 2. Choose **Sync now** to establish the initial chapter-1 baseline.
 3. In Simulator, change Readest to **Chapter 2**. Hide the panel, choose **Sync now**,
    then **Open at Readest position**. The app applies the position through its
-   normal database backup and conditional update path.
+   normal guarded SQLite transaction and conditional update path.
 4. Turn the simulated reader to chapter 3 and return. Change Readest to chapter 1.
    **Sync now** now offers the app's conflict choices.
 5. Choose **Use Readest position**, then **Open at Readest position** to test an
@@ -74,3 +74,32 @@ docker compose run --rm simulator sh -ec '
   ctest --test-dir build/readest-sync/simulator --output-on-failure
 '
 ```
+
+## Annotation coverage
+
+Mock mode supplies a native annotation database and the notes sync endpoint.
+The automated annotation suite covers highlights and attached notes in both
+directions, including edits, deletions, retries and conflicts. The simulator
+reader panel is a position/handoff model, not an EPUB renderer or annotation
+editor; use the native reader and Readest for visual annotation acceptance.
+
+## Documentation screenshots
+
+The [user guide](../../../../apps/readest-sync/docs/USER-GUIDE.md) uses the real
+app QML with mock fixtures. Recreate its screenshots without accessing a real
+account or changing the interactive simulator's storage:
+
+```sh
+docker compose run --rm -e READEST_DOC_SCREENSHOTS=/workspace/build/readest-sync/doc-screenshots simulator sh -ec '
+  cmake --build build/readest-sync/simulator --target simulator-test -j2
+  ctest --test-dir build/readest-sync/simulator -R "^simulator$" --output-on-failure
+'
+```
+
+Build/configure the simulator first using the command above if the build directory
+does not yet exist. This test uses a temporary mock profile. It captures the library,
+library menu, downloaded book details, mock reader and reading-position conflict.
+Review the resulting PNGs, then copy them into
+`apps/readest-sync/docs/images/`. The images retain the **Simulator · Mock** label;
+they are not device screenshots. `READEST_UI_PREVIEW` remains available for the
+broader test preview set, including orientation layouts.

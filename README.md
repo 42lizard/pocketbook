@@ -8,10 +8,11 @@ firmware contains Qt 6.10.3, the `pocketbook2` platform plugin and
 Other devices, including Verse Pro, need separate validation.
 
 - **Hello** is a small Qt Quick example using PocketBook controls.
-- **[Readest Sync](apps/readest-sync/README.md)** downloads EPUBs and synchronizes
-  native-reader progress with Readest Cloud. Its Qt6 UI has been launched on InkPad;
-  full device acceptance of the latest build is pending. The previous InkView UI's login,
-  networking, downloads, progress sync and cover browsing were user-confirmed.
+- **[Readest Sync](apps/readest-sync/README.md)** browses PocketBook and Readest
+  books, downloads/uploads EPUBs, and synchronizes native-reader progress,
+  highlights and attached notes. The current Qt6 app is device-validated on the
+  target above. See the [illustrated user guide](apps/readest-sync/docs/USER-GUIDE.md)
+  for screenshots captured with the simulator's mock cloud.
 
 ## Build
 
