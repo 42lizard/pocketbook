@@ -22,12 +22,13 @@ int main(int argc,char** argv) {
         state.apply_page("fixture-user",0,page);
         std::ofstream bad(config.root+"/session.json"); bad<<"{bad";
     }
-    int requests=0; bool fail_progress=false;
+    int requests=0,annotation_gets=0; bool fail_progress=false;
     const std::atomic<bool>* expected_cancel=nullptr;
     config.transport.request=[&](const std::string& url,const std::string&,const std::vector<std::string>&,
         const std::string&,const std::string&,size_t,const std::atomic<bool>& token) {
         assert(&token==expected_cancel);
         ++requests;
+        if(url.find("type=notes")!=std::string::npos) {++annotation_gets;return HttpResponse{200,R"({"notes":[]})",0};}
         if(url.find("type=configs")!=std::string::npos) {
             HttpResponse r; r.status=fail_progress?503:200; r.body=R"({"configs":[]})"; return r;
         }
@@ -72,6 +73,24 @@ int main(int argc,char** argv) {
         assert(result.outcome==(command==Command::ReadOffline?Outcome::LocalOpen:Outcome::Synced));
         assert(full_inspections==1);
         assert(result.open_path==(command==Command::Sync?std::string():local));
+    }
+    {
+        auto annotated=config;annotated.annotations_database=base+"/annotations.db";
+        annotated.model="PB743G";annotated.firmware="U743g.6.11.1683";
+        sqlite3* notes=nullptr;assert(sqlite3_open(annotated.annotations_database.c_str(),&notes)==SQLITE_OK);
+        assert(sqlite3_exec(notes,"CREATE TABLE TypeNames(OID,TypeName);CREATE TABLE TagNames(OID,TagName);"
+            "CREATE TABLE Items(OID,ParentID,TypeID,State,TimeAlt,HashUUID);CREATE TABLE Tags(ItemID,TagID,Val,TimeEdt);"
+            "INSERT INTO TypeNames VALUES(0,'type.book');INSERT INTO Items VALUES(1,NULL,0,0,0,'00112233445566778899AABBCCDDEEFF');",
+            nullptr,nullptr,nullptr)==SQLITE_OK);sqlite3_close(notes);
+        ApplicationService with_annotations(annotated);assert(with_annotations.execute(Request{},cancel).outcome==Outcome::Ready);
+        request.command=Command::Sync;auto annotated_result=with_annotations.execute(request,cancel);
+        assert(annotated_result.outcome==Outcome::Synced && annotated_result.progress_warning.empty() && annotation_gets==1);
+        request.command=Command::Open;annotated_result=with_annotations.execute(request,cancel);
+        assert(annotated_result.open_path==local && annotated_result.progress_warning.empty() && annotation_gets==2);
+        request.command=Command::ReadOffline;with_annotations.execute(request,cancel);assert(annotation_gets==2);
+        assert(unlink(annotated.annotations_database.c_str())==0);
+        request.command=Command::Open;annotated_result=with_annotations.execute(request,cancel);
+        assert(annotated_result.open_path==local && annotated_result.progress_warning.find("Annotations:")!=std::string::npos);
     }
     fail_progress=true; request.command=Command::Open; full_inspections=0;
     result=service.execute(request,cancel);

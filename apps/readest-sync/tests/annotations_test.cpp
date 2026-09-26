@@ -44,7 +44,9 @@ int main(int argc,char** argv) {
         auto* in=json_object_array_get_idx(list,0);const auto id=string_member(in,"id");
         auto out=parse_json(server.count(id)?server.at(id):"{}");
         set(out.get(),"user_id",std::string("user"));set(out.get(),"book_hash",integrity.readest_hash);
-        if(!server_wins) {
+        const bool newer=!server.count(id) || integer_member(in,"updatedAt")>record_timestamp(out.get(),"updated_at") ||
+            record_timestamp(in,"deletedAt")>record_timestamp(out.get(),"deleted_at");
+        if(!server_wins && newer) {
             for(const auto& [a,b]:std::map<std::string,std::string>{{"id","id"},{"type","type"},{"cfi","cfi"},{"text","text"},{"note","note"},{"color","color"},{"style","style"},
                     {"createdAt","created_at"},{"updatedAt","updated_at"},{"deletedAt","deleted_at"}}) {
                 auto* v=member(in,a.c_str());json_object_object_add(out.get(),b.c_str(),v?json_object_get(v):nullptr);
@@ -56,7 +58,7 @@ int main(int argc,char** argv) {
     };
     Cloud cloud(root+"/annotations-session.json","ca","public","https://auth.test","https://api.test",api);cloud.sign_in("test","test",1000);
     State state(root+"/annotations-state.db");std::atomic<bool> cancel{false};long long now=2000;
-    auto sync=[&] {sync_annotations(cloud,state,verified,native,database,++now,"PB743G","U743g.6.11.1683",cancel);};
+    auto sync=[&] {return sync_annotations(cloud,state,verified,native,database,++now,"PB743G","U743g.6.11.1683",cancel);};
     const std::string cfi="epubcfi(/6/2!/4/4/1,:0,:16)",text="Marker ALPHA-01.";
     auto remote=[&](std::string id,std::string note) {
         auto row=parse_json("{}");set(row.get(),"id",id);set(row.get(),"user_id",std::string("user"));set(row.get(),"book_hash",integrity.readest_hash);
@@ -74,6 +76,10 @@ int main(int argc,char** argv) {
     sql(db,"UPDATE Tags SET Val=replace(replace(Val,'pbr:/webkit?##','pbr:/page?page=2&offs=4#'),'/1:0)','/1)') WHERE TagID IN (104,107)");
     sync();assert(posts==0);
     mutate("remote1","note","remote edited");sync();assert(scalar(db,"SELECT Val FROM Tags WHERE ItemID=2 AND TagID=105")=="{\"text\":\"remote edited\"}");
+    for(const auto& color:{"blue","green","#00bcd4","#00ff00","#ff00ff","yellow"}) {
+        mutate("remote1","color",color);assert(sync().empty());
+        assert(sync().empty());assert(posts==0);
+    }
     // Native in-place edits upload to the known ID.
     native_note("{\"text\":\"local edited\"}");sync();assert(posts==1 && server.size()==1);
     sync();assert(posts==1);
@@ -88,6 +94,11 @@ int main(int argc,char** argv) {
     assert(last_post==pending);int successful=posts;sync();assert(posts==successful);
     // Ambiguous commit: the next pull acknowledges it without a second POST.
     native_note("{\"text\":\"already committed\"}");lose_response=true;fails(sync,"lost response");successful=posts;lose_response=false;sync();assert(posts==successful);
+    // Rebase a pending upload when the server saved unchanged content later.
+    native_note("{\"text\":\"newer pending\"}");fail_post=true;fails(sync,"saved for retry");fail_post=false;
+    auto advanced=parse_json(server.at("remote1"));set(advanced.get(),"updated_at",(now+100)*1000);server["remote1"]=json_text(advanced.get());
+    sync();assert(string_member(parse_json(server.at("remote1")).get(),"note")=="newer pending");
+    now+=101;
     // Server winner is not treated as an acknowledgement of our edit.
     native_note("{\"text\":\"rejected edit\"}");server_wins=true;fails(sync,"did not accept");server_wins=false;sync();
     // Native Edit creates a new UUID and tombstones the old UUID.
@@ -105,9 +116,37 @@ int main(int argc,char** argv) {
     fails(sync,"Stale Readest");assert(scalar(db,"SELECT State FROM Items WHERE OID=3")=="2");server[replacement]=tombstone;
     // Wrong account, bad ranges and concurrent native changes fail before import.
     server["new"]=remote("new","new note");mutate("new","user_id","wrong");fails(sync,"account/book mismatch");mutate("new","user_id","user");
-    mutate("new","cfi","epubcfi(/6/2!/4/4/1,:0,:999999)");fails(sync,"exceeds");mutate("new","cfi",cfi);
-    race=true;fails(sync,"changed on PocketBook");race=false;sync();
+    mutate("new","cfi","epubcfi(/6/2!/4/4/1,:0,:999999)");assert(sync().find("exceeds")!=std::string::npos);mutate("new","cfi",cfi);
+    race=true;fails(sync,"changed on PocketBook");race=false;
+    server["unsupported"]=remote("unsupported","unsupported color");mutate("unsupported","color","red");
+    assert(sync().find("unsupported")!=std::string::npos);
+    assert(server.count("unsupported")); // Unrelated supported import still completed.
+    server.erase("unsupported");
     assert(scalar(db,"SELECT count(*) FROM Items WHERE State=0 AND ParentID=1")=="1");
+    // An unsupported replacement must not delete the previously synced cloud copy.
+    sql(db,"UPDATE Items SET State=2 WHERE OID=4; INSERT INTO Items VALUES(5,1,4,0,2001,'UNSUPPORTED-REPLACEMENT');"
+        "INSERT INTO Tags(ItemID,TagID,Val,TimeEdt) SELECT 5,TagID,Val,TimeEdt FROM Tags WHERE ItemID=4;"
+        "UPDATE Tags SET Val='unknown-color' WHERE ItemID=5 AND TagID=106;");
+    server["another"]=remote("another","unrelated incoming");
+    assert(sync().find("deferred")!=std::string::npos);
+    assert(scalar(db,"SELECT count(*) FROM Items WHERE State=0 AND ParentID=1")=="2"); // Unsupported replacement plus new import.
+    assert(record_timestamp(parse_json(server.at("new")).get(),"deleted_at")==0);
+    sql(db,"UPDATE Tags SET Val='yellow' WHERE ItemID=5 AND TagID=106;");
+    server["unsupported2"]=remote("unsupported2","unrelated unsupported remote");mutate("unsupported2","color","red");
+    assert(!sync().empty());assert(record_timestamp(parse_json(server.at("new")).get(),"deleted_at")>0);
+    bool replacement_uploaded=false;
+    for(const auto& [id,row]:server) if(id!="new" && id!="another" && id!="unsupported2" && !record_timestamp(parse_json(row).get(),"deleted_at")) replacement_uploaded=true;
+    assert(replacement_uploaded);server.erase("unsupported2");
+    // A deletion after an interrupted first import is not a missing-new-record case.
+    auto journal=parse_json(state.annotations("user",integrity.readest_hash,epub,integrity.sha256));
+    auto* entries=member(journal.get(),"entries");
+    for(size_t i=0;i<json_object_array_length(entries);++i) {
+        auto* entry=json_object_array_get_idx(entries,i);
+        if(string_member(entry,"remote")=="another") {set(entry,"baseLocal",std::string("deleted"));set(entry,"baseRemote",std::string("deleted"));}
+    }
+    state.save_annotations("user",integrity.readest_hash,epub,integrity.sha256,json_text(journal.get()));
+    sql(db,"UPDATE Items SET State=2 WHERE OID=6");fails(sync,"interrupted initial sync");
+    assert(scalar(db,"SELECT State FROM Items WHERE OID=6")=="2");
     cancel=true;fails(sync,"cancelled");cancel=false;
     fails([&]{sync_annotations(cloud,state,verified,native,database,now,"other","other",cancel);},"firmware");
     assert(scalar(db,"PRAGMA integrity_check")=="ok");sqlite3_close(db);

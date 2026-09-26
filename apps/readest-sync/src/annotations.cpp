@@ -43,11 +43,12 @@ std::string point(std::string s) {
     return out;
 }
 struct Note {
-    std::string id,begin,end,text,note,color="yellow",style="highlight",meta;
-    long long created=0,updated=0,deleted=0;
+    std::string id,begin,end,text,note,color="yellow",style="highlight",meta,unsupported;
+    long long created=0,updated=0,deleted=0;bool annotation=true;
 };
 std::string fingerprint(const Note& n) {
     if(n.deleted) return "deleted";
+    if(!n.unsupported.empty()) return "unsupported:"+n.id;
     auto o=object(); put(o.get(),"begin",point(n.begin)); put(o.get(),"end",point(n.end));
     put(o.get(),"text",normalized_text(n.text)); put(o.get(),"note",n.note);
     put(o.get(),"color",n.color); put(o.get(),"style",n.style); return hash(json_text(o.get()));
@@ -63,10 +64,22 @@ std::string range(const Note& n) {
     auto out=a.substr(0,slash)+","+a.substr(slash,a.size()-slash-1)+","+b.substr(slash);
     require(!readest_range_cfi(out).first.empty(),"Cannot encode annotation range"); return out;
 }
+std::string native_color(const std::string& color) {
+    const std::map<std::string,std::string> colors={{"yellow","yellow"},{"blue","blue"},{"green","green"},
+        {"#00bcd4","cian"},{"#00ff00","lime"},{"#ff00ff","magenta"}};
+    auto found=colors.find(color);
+    require(found!=colors.end(),"Unsupported annotation color; nothing overwritten");return found->second;
+}
+std::string remote_color(const std::string& color) {
+    const std::map<std::string,std::string> colors={{"yellow","yellow"},{"blue","blue"},{"green","green"},
+        {"cian","#00bcd4"},{"cyan","#00bcd4"},{"lime","#00ff00"},{"magenta","#ff00ff"}};
+    auto found=colors.find(color);
+    require(found!=colors.end(),"Unsupported native annotation color; nothing overwritten");return found->second;
+}
 void validate(const Note& n,const std::string& epub) {
     if(n.deleted) return;
     require(n.style=="highlight","Unsupported annotation style; nothing overwritten");
-    require(n.color=="yellow" || n.color=="#00bcd4","Unsupported annotation color; nothing overwritten");
+    native_color(n.color);
     require(n.text.size()<=65536 && n.note.size()<=65536 && n.note.find('\0')==std::string::npos,"Invalid annotation text");
     validate_annotation_range(epub,n.begin,n.end,n.text);
 }
@@ -106,11 +119,14 @@ Snapshot snapshot(DB& db,const std::string& fast_hash) {
     std::map<std::string,std::map<std::string,std::string>> tags;
     std::map<std::string,Note> all;std::map<std::string,std::string> native_ids;
     Json raw(json_object_new_array(),json_object_put);
-    size_t count=0;
+    size_t count=0,bytes=0;
     while(rows.row()) {
         require(++count<=50000,"Too many native annotations");
         Json row(json_object_new_array(),json_object_put);
-        for(int i=0;i<7;++i) json_object_array_add(row.get(),json_object_new_string(rows.text(i).c_str()));
+        for(int i=0;i<7;++i) {
+            const auto value=rows.text(i);bytes+=value.size();require(bytes<=4*1024*1024,"Native annotation data is too large");
+            json_object_array_add(row.get(),json_object_new_string(value.c_str()));
+        }
         json_object_array_add(raw.get(),row.release());
         const auto id=rows.text(1);require(!id.empty(),"Native annotation has no UUID");
         auto [identity,inserted]=native_ids.emplace(id,rows.text(0));
@@ -126,9 +142,10 @@ Snapshot snapshot(DB& db,const std::string& fast_hash) {
     for(auto& [id,n]:all) {
         const auto& t=tags.at(id); auto type=t.find("bm.type");
         if(type==t.end() || (type->second!="note" && type->second!="highlight")) {
-            require(!t.count("bm.quotation"),"Unsupported native annotation type; nothing overwritten");continue;
+            n.unsupported="Unsupported native annotation type";n.annotation=t.count("bm.quotation");out.notes[id]=n;continue;
         }
         if(n.deleted) {out.notes[id]=n;continue;}
+        try {
         auto quote=parse_json(t.at("bm.quotation")); auto bookmark=parse_json(t.at("bm.book_mark"));
         auto location=[](std::string s) {auto at=s.find("epubcfi(");require(at!=std::string::npos,"Unsupported native annotation anchor");return s.substr(at);};
         n.begin=location(string_member(quote.get(),"begin"));n.end=location(string_member(quote.get(),"end"));
@@ -136,14 +153,20 @@ Snapshot snapshot(DB& db,const std::string& fast_hash) {
         n.created=integer_member(bookmark.get(),"created");
         require(n.created>0 && n.created<=999999999999LL,"Invalid native annotation creation time");n.created*=1000;
         auto note=t.find("bm.note");if(note!=t.end()) {auto o=parse_json(note->second);n.note=optional(o.get(),"text");}
-        auto color=t.find("bm.color");require(color!=t.end(),"Native annotation color missing");n.color=color->second=="cian"?"#00bcd4":color->second;
+        auto color=t.find("bm.color");require(color!=t.end(),"Native annotation color missing");n.color=remote_color(color->second);
         auto subtype=t.find("bm.subtype");require(subtype==t.end() || subtype->second.empty(),"Unsupported native annotation subtype");
+        } catch(const std::exception& e) {n.unsupported=e.what();}
         out.notes[id]=n;
     }
     return out;
 }
-Snapshot read_native(const std::string& database,const std::string& fast_hash) {
-    DB db(database,false); db.exec("BEGIN");auto result=snapshot(db,fast_hash);db.exec("COMMIT");return result;
+Snapshot read_native(const std::string& database,const std::string& fast_hash,const std::string& epub) {
+    DB db(database,false);db.exec("BEGIN");auto result=snapshot(db,fast_hash);db.exec("COMMIT");
+    for(auto& [id,n]:result.notes) {
+        (void)id;if(!n.unsupported.empty()) continue;
+        try {validate(n,epub);} catch(const std::exception& e) {n.unsupported=e.what();}
+    }
+    return result;
 }
 std::map<std::string,Note> remote_notes(const std::string& body,const std::string& user,const std::string& book,const std::string& epub) {
     auto json=parse_json(body);auto* rows=member(json.get(),"notes");
@@ -158,12 +181,14 @@ std::map<std::string,Note> remote_notes(const std::string& body,const std::strin
         n.created=record_timestamp(row,"created_at");n.updated=record_timestamp(row,"updated_at");n.deleted=record_timestamp(row,"deleted_at");
         require(n.updated>0,"Missing Readest annotation timestamp");
         if(!n.deleted) {
+            try {
             const auto cfi=optional(row,"cfi");auto endpoints=readest_range_cfi(cfi);
             if(endpoints.first.empty() && cfi.empty()) endpoints={xpointer_cfi(epub,string_member(row,"xpointer0")),xpointer_cfi(epub,string_member(row,"xpointer1"))};
             require(!endpoints.first.empty(),"Unsupported Readest annotation range");n.begin=endpoints.first;n.end=endpoints.second;
             n.text=string_member(row,"text");n.note=optional(row,"note");n.color=string_member(row,"color");n.style=string_member(row,"style");
             n.meta=optional(row,"meta_hash");
             validate(n,epub);
+            } catch(const std::exception& e) {n.unsupported=e.what();}
         }
         require(notes.emplace(n.id,n).second,"Duplicate Readest annotation ID");
     }
@@ -204,7 +229,7 @@ void apply_native(const std::string& database,const std::string& fast_hash,const
             put(quote.get(),"begin","pbr:/webkit?##"+note.begin);put(quote.get(),"end","pbr:/webkit?##"+note.end);put(quote.get(),"text",note.text);
             put(anchor.get(),"anchor","pbr:/webkit?##"+note.begin);put(anchor.get(),"created",note.created/1000);put(comment.get(),"text",note.note);
             for(const auto& [name,value]:std::map<std::string,std::string>{{"bm.type",note.note.empty()?"highlight":"note"},
-                    {"bm.color",note.color=="#00bcd4"?"cian":note.color},{"bm.note",json_text(comment.get())},
+                    {"bm.color",native_color(note.color)},{"bm.note",json_text(comment.get())},
                     {"bm.book_mark",json_text(anchor.get())},{"bm.quotation",json_text(quote.get())}}) {
                 Query tag(db,"SELECT OID FROM TagNames WHERE TagName=?",{name});require(tag.row(),"Missing native annotation tag");
                 Query(db,"INSERT OR REPLACE INTO Tags(ItemID,TagID,Val,TimeEdt) VALUES(?,?,?,?)",{item,tag.text(0),value,stamp}).row();
@@ -216,7 +241,7 @@ void apply_native(const std::string& database,const std::string& fast_hash,const
 }
 } // namespace
 
-void sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verified,
+std::string sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verified,
     const NativePosition& native,const std::string& database,long long now,
     const std::string& model,const std::string& firmware,const std::atomic<bool>& cancel) {
     require(model=="PB743G" && firmware=="U743g.6.11.1683","Annotation sync is not verified on this firmware");
@@ -224,11 +249,23 @@ void sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verif
     const auto& book=verified.book();const auto user=cloud.session().user_id;
     require(!user.empty() && !book.local_only && !book.book.deleted && native.book_path==book.path,"Invalid annotation sync book");
     check(cancel);
-    auto local=read_native(database,native.fast_hash);
-    for(const auto& [id,n]:local.notes) { (void)id;validate(n,book.path); }
+    auto local=read_native(database,native.fast_hash,book.path);
     const auto response=cloud.get("/api/sync?type=notes&since=0&book="+book.book.hash,now);
     require(response.status==200,"Cannot fetch Readest annotations");
     auto remote=remote_notes(response.body,user,book.book.hash,book.path);
+    std::string warnings;
+    for(const auto& source:{std::make_pair("PocketBook",&local.notes),std::make_pair("Readest",&remote)})
+        for(const auto& [id,n]:*source.second) if(n.annotation && !n.unsupported.empty()) {
+            if(!warnings.empty()) warnings+=" ";
+            warnings+="Skipped "+std::string(source.first)+" annotation "+id+": "+n.unsupported+".";
+        }
+    auto unsupported_live=[](const auto& notes) {
+        return std::any_of(notes.begin(),notes.end(),[](const auto& item) {
+            const auto& n=item.second;return n.annotation && !n.deleted && !n.unsupported.empty();
+        });
+    };
+    const bool local_unsupported=unsupported_live(local.notes),remote_unsupported=unsupported_live(remote);
+    bool deferred=false;
     struct Entry {std::string local,base_local="deleted",base_remote="deleted",pending,pending_local;long long remote_stamp=0;};
     std::map<std::string,Entry> entries;std::set<std::string> used;
     auto saved=parse_json(state.annotations(user,book.book.hash,book.path,book.sha256));auto* records=member(saved.get(),"entries");
@@ -253,10 +290,10 @@ void sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verif
         state.save_annotations(user,book.book.hash,book.path,book.sha256,json_text(data.get()));
     };
     for(const auto& [id,n]:remote) {
-        if(entries.count(id) || n.deleted) continue;
+        if(entries.count(id) || n.deleted || !n.unsupported.empty()) continue;
         Entry e;
         // Adopt a previously imported identical record, including the device trial.
-        for(const auto& [uuid,l]:local.notes) if(!l.deleted && !used.count(uuid) && fingerprint(l)==fingerprint(n)) {
+        for(const auto& [uuid,l]:local.notes) if(!l.deleted && l.unsupported.empty() && !used.count(uuid) && fingerprint(l)==fingerprint(n)) {
             require(e.local.empty(),"Ambiguous identical local annotations");e.local=uuid;
         }
         if(e.local.empty()) {
@@ -268,7 +305,7 @@ void sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verif
         require(used.insert(e.local).second,"Annotation mapping collision");entries.emplace(id,e);
     }
     for(const auto& [uuid,n]:local.notes) {
-        if(n.deleted || used.count(uuid)) continue;
+        if(n.deleted || !n.unsupported.empty() || used.count(uuid)) continue;
         const auto id=hash(user+":"+book.book.hash+":"+book.path+":"+uuid).substr(0,32);
         require(!entries.count(id) && !remote.count(id),"Readest annotation identity collision");
         Entry e;e.local=uuid;entries[id]=e;used.insert(uuid);
@@ -277,11 +314,23 @@ void sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verif
     save();
     for(auto& [id,e]:entries) {
         check(cancel);
+        auto native_note=local.notes.find(e.local);auto remote_note=remote.find(id);
+        if((native_note!=local.notes.end() && !native_note->second.unsupported.empty()) ||
+           (remote_note!=remote.end() && !remote_note->second.unsupported.empty())) continue;
         auto observed=remote.find(id);
         require(!e.remote_stamp || observed!=remote.end(),"Readest annotation disappeared without a deletion marker");
         const auto remote_stamp=observed==remote.end()?0:std::max(observed->second.updated,observed->second.deleted);
         require(remote_stamp>=e.remote_stamp,"Stale Readest annotation response; retry");
         auto lf=fingerprint(local.notes,e.local),rf=fingerprint(remote,id);
+        if(e.base_local=="deleted" && e.base_remote=="deleted" && lf!=rf) {
+            const bool native_deleted=native_note!=local.notes.end() && native_note->second.deleted;
+            const bool remote_deleted=remote_note!=remote.end() && remote_note->second.deleted;
+            require(!native_deleted && !remote_deleted,"Annotation deleted during interrupted initial sync; resolve the conflicting copies");
+        }
+        // Native Edit may tombstone an old UUID and create an unsupported
+        // replacement. Keep the other reader's copy until that replacement can sync.
+        if((lf=="deleted" && rf!="deleted" && e.base_local!="deleted" && local_unsupported) ||
+           (rf=="deleted" && lf!="deleted" && e.base_remote!="deleted" && remote_unsupported)) {deferred=true;continue;}
         if(lf==rf) {
             e.base_local=lf;e.base_remote=rf;e.remote_stamp=remote_stamp;e.pending.clear();e.pending_local.clear();save();continue;
         }
@@ -298,7 +347,7 @@ void sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verif
             if(rc) {
                 auto it=remote.find(id);require(it!=remote.end(),"Readest annotation disappeared without a deletion marker");
                 apply_native(database,native.fast_hash,local,e.local,it->second,cancel);
-                local=read_native(database,native.fast_hash);
+                local=read_native(database,native.fast_hash,book.path);
                 require(fingerprint(local.notes,e.local)==rf,"Native annotation write could not be verified");
                 e.base_local=rf;e.base_remote=rf;e.remote_stamp=remote_stamp;save();continue;
             }
@@ -317,12 +366,23 @@ void sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verif
             e.pending=payload(n,book.book.hash);e.pending_local=lf;save();
         }
         check(cancel);
-        require(read_native(database,native.fast_hash).raw==local.raw,"Annotations changed on PocketBook during sync; retry");
+        require(read_native(database,native.fast_hash,book.path).raw==local.raw,"Annotations changed on PocketBook during sync; retry");
         // Recheck the remote record before a write; the API has no conditional update.
         auto fresh=cloud.get("/api/sync?type=notes&since=0&book="+book.book.hash,now);
         require(fresh.status==200,"Cannot recheck Readest annotations; saved for retry");
         auto latest=remote_notes(fresh.body,user,book.book.hash,book.path);
         require(fingerprint(latest,id)==rf,"Annotation changed in Readest before upload; retry");
+        auto pending=parse_json(e.pending);const auto current=latest.find(id);
+        if(current!=latest.end()) {
+            const auto version=std::max(current->second.updated,current->second.deleted);
+            require(version>=e.remote_stamp,"Stale Readest annotation response; retry");
+            if(version>=integer_member(pending.get(),"updatedAt")) {
+                require(version<0x7fffffffffffffffLL-1,"Invalid remote annotation timestamp");
+                put(pending.get(),"updatedAt",version+1);
+                if(member(pending.get(),"deletedAt")) put(pending.get(),"deletedAt",version+1);
+                e.pending=json_text(pending.get());save();
+            }
+        }
         check(cancel);
         // Retry the same body and ID. Server-authoritative data must acknowledge it.
         auto posted=cloud.post("/api/sync","{\"books\":[],\"configs\":[],\"notes\":["+e.pending+"]}",now);
@@ -333,8 +393,10 @@ void sync_annotations(Cloud& cloud,State& state,const VerifiedManagedBook& verif
         remote[id]=winner->second;e.base_local=e.pending_local;e.base_remote=e.pending_local;
         e.remote_stamp=std::max(winner->second.updated,winner->second.deleted);
         e.pending.clear();e.pending_local.clear();save();
-        local=read_native(database,native.fast_hash);
+        local=read_native(database,native.fast_hash,book.path);
         require(fingerprint(local.notes,e.local)==e.base_local,"Newer PocketBook annotation edits remain; sync again");
     }
+    if(deferred) warnings+=" Deletions were deferred because unsupported annotations may be replacement edits.";
+    return warnings;
 }
 } // namespace readest

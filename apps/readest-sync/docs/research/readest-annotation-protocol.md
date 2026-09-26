@@ -193,3 +193,30 @@ anchors with page/offset metadata, and removed the explicit zero text offset
 from the start CFI. The end CFI offset 355, selected text, note, color and UUID
 were preserved. Reconciliation must compare semantic ranges rather than raw
 location strings, so this normalization does not create a false user edit.
+
+## Application implementation
+
+The annotation module is now called by the existing per-book Sync and Open
+operations. Durable state is scoped to account, Readest book identity, exact
+local copy and EPUB SHA-256. It stores both content baselines, accepted remote
+versions, native/remote identities and pending uploads before network writes.
+Full per-book pulls avoid relying on a clock-based incremental cursor.
+
+Supported text highlights retain notes and the native palette mappings for
+yellow, blue, green, cyan (`cian`), lime and magenta. Unsupported styles, colors
+or ranges remain untouched and produce a warning. Native-to-cloud deletion
+is deferred when an unsupported live native annotation may be a replacement
+for an edited UUID; the same protection applies in the other direction.
+Conflicting edits are reported without choosing a winner. The server does not
+provide conditional writes, so a preflight read narrows but cannot eliminate
+the concurrent-write window on the cloud side.
+
+Regression coverage includes both directions of creation/edit/deletion, native
+UUID replacement, reader anchor normalization, exact EPUB text/UTF-16 range
+validation, durable retries and lost responses, server-authoritative rejection,
+newer timestamps with unchanged remote content, stale deletion responses,
+mixed supported/unsupported records, replacement deletion deferral, identity
+checks, cancellation, native races and firmware gating. Full Linux host tests
+and the Qt6 ARM ABI/package check passed during development. End-to-end app
+validation on the reader is still required; the earlier screenshots validate
+the separate single-note import trial.

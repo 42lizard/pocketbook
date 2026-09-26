@@ -132,7 +132,9 @@ void ApplicationService::synchronize(const Request& request, OperationResult& re
         state_->save_upload(request.book.account,request.book.hash,{});
     if(!config_.annotations_database.empty() && transition.outcome!=ResumeOutcome::SyncUnavailable &&
        transition.outcome!=ResumeOutcome::CommitUncertain && transition.outcome!=ResumeOutcome::AppliedUnrecorded) {
-        try { sync_annotations(*cloud_,*state_,verified,native,config_.annotations_database,time(nullptr),config_.model,config_.firmware,cancel); }
+        try { const auto warning=sync_annotations(*cloud_,*state_,verified,native,config_.annotations_database,time(nullptr),config_.model,config_.firmware,cancel);
+            if(!warning.empty()) {if(!result.progress_warning.empty()) result.progress_warning+=" ";result.progress_warning+=warning;}
+        }
         catch(const std::exception& e) {
             check_cancel(cancel);
             if(!result.progress_warning.empty()) result.progress_warning+=" ";

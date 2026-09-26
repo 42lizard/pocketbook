@@ -1,5 +1,6 @@
 #include "mock_cloud.h"
 #include "application.h"
+#include "json_util.h"
 #include <QTemporaryDir>
 #include <QDir>
 #include <QFileInfo>
@@ -27,6 +28,13 @@ int main() {
         "https://readest.supabase.co","https://web.readest.com",second->transport().bind_request(cancel));
     a.sign_in("test","test",time(nullptr)); b.sign_in("test","test",time(nullptr));
     const auto hash=first->firstHash();
+    const auto annotation="{\"books\":[],\"configs\":[],\"notes\":[{\"id\":\"test-note\",\"type\":\"annotation\",\"bookHash\":\""+hash.toStdString()+
+        "\",\"cfi\":\"epubcfi(/6/2!/4/4/1,:0,:16)\",\"text\":\"Marker ALPHA-01.\",\"note\":\"mock note\",\"style\":\"highlight\",\"color\":\"yellow\",\"createdAt\":1,\"updatedAt\":10}]}";
+    assert(a.post("/api/sync",annotation,time(nullptr)).body.find("mock note")!=std::string::npos);
+    auto older=annotation;older.replace(older.find("mock note"),9,"old note");older.replace(older.find("\"updatedAt\":10"),14,"\"updatedAt\":9");
+    assert(a.post("/api/sync",older,time(nullptr)).body.find("mock note")!=std::string::npos);
+    assert(a.get("/api/sync?type=notes&book="+hash.toStdString(),time(nullptr)).body.find("mock note")!=std::string::npos);
+    assert(b.get("/api/sync?type=notes&book="+hash.toStdString(),time(nullptr)).body.find("mock note")==std::string::npos);
     first->remoteChapter(hash,3);
     assert(a.get("/api/sync?type=configs&book="+hash.toStdString(),time(nullptr)).body.find("/6/6!")!=std::string::npos);
     assert(b.get("/api/sync?type=configs&book="+hash.toStdString(),time(nullptr)).body.find("/6/2!")!=std::string::npos);

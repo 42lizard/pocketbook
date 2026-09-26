@@ -42,6 +42,7 @@ void pause(int milliseconds,const std::atomic<bool>& cancellation) {
 }
 void MockCloud::saveRemote() {
     writeFile(root+"/remote.json",QJsonDocument(configs).toJson());
+    writeFile(root+"/notes.json",QJsonDocument(notes).toJson());
     writeFile(root+"/library.json",QJsonDocument(books).toJson());
     writeFile(root+"/files.json",QJsonDocument(files).toJson());
     // Keep the library's display metadata consistent with saved remote configs.
@@ -101,6 +102,7 @@ MockCloud::MockCloud(QString storage,const QString& fixtures):root(std::move(sto
         const auto rows=saved.object();
         for(auto it=rows.begin();it!=rows.end();++it) configs[it.key()]=it.value();
     }
+    if(QFile::exists(root+"/notes.json")) notes=QJsonDocument::fromJson(readFile(root+"/notes.json")).object();
     saveRemote();
 }
 HttpResponse MockCloud::request(const std::string& address,const std::string& method,
@@ -125,6 +127,10 @@ HttpResponse MockCloud::request(const std::string& address,const std::string& me
         } else if(query.queryItemValue("type")=="configs") {
             const auto row=configs.value(query.queryItemValue("book"));
             result={{"configs",row.isObject()?QJsonArray{row}:QJsonArray{}}};
+        } else if(query.queryItemValue("type")=="notes") {
+            QJsonArray rows;
+            for(const auto& value:notes) if(value.toObject()["book_hash"]==query.queryItemValue("book")) rows.append(value);
+            result={{"notes",rows}};
         } else throw std::runtime_error("Unknown simulator sync request");
     } else if(url.path()=="/api/sync" && method=="POST") {
         const auto payload=QJsonDocument::fromJson(QByteArray::fromStdString(body)).object();
@@ -145,7 +151,21 @@ HttpResponse MockCloud::request(const std::string& address,const std::string& me
             row["updated_at"]=incoming["updatedAt"];
             configs[hash]=row;
         }
-        saveRemote(); result={{"success",true}};
+        QJsonArray accepted;
+        for(const auto& entry:payload["notes"].toArray()) {
+            const auto incoming=entry.toObject();const auto key=incoming["bookHash"].toString()+"|"+incoming["id"].toString();
+            auto row=notes[key].toObject();
+            if(row.isEmpty() || incoming["updatedAt"].toInteger()>row["updated_at"].toInteger() ||
+               incoming["deletedAt"].toInteger()>row["deleted_at"].toInteger()) {
+                row={{"user_id",user},{"book_hash",incoming["bookHash"]}};
+                const QMap<QString,QString> fields={{"id","id"},{"type","type"},{"cfi","cfi"},{"text","text"},{"note","note"},
+                    {"color","color"},{"style","style"},{"createdAt","created_at"},{"updatedAt","updated_at"},{"deletedAt","deleted_at"}};
+                for(auto field=fields.cbegin();field!=fields.cend();++field) row[field.value()]=incoming.value(field.key());
+                notes[key]=row;
+            }
+            accepted.append(row);
+        }
+        saveRemote(); result={{"success",true},{"notes",accepted}};
     } else if(url.path()=="/api/storage/upload" && method=="POST") {
         const auto payload=QJsonDocument::fromJson(QByteArray::fromStdString(body)).object();
         const auto key=user+"/"+payload["fileName"].toString();
