@@ -67,7 +67,7 @@ if(READEST_DESKTOP OR READEST_HOST_TESTS)
   add_subdirectory(tests)
 endif()
 set(PRESENTATION_SOURCES src/controller.cpp src/controller.h src/library_model.cpp src/library_model.h
-  src/operation_runner.cpp src/device_adapter.cpp src/cover_loader.cpp src/thumbnail_cache.cpp)
+  src/book_status.cpp src/operation_runner.cpp src/device_adapter.cpp src/cover_loader.cpp src/thumbnail_cache.cpp)
 if(NOT READEST_HOST_TESTS OR READEST_DESKTOP)
   add_library(readest-presentation STATIC ${PRESENTATION_SOURCES})
   set_target_properties(readest-presentation PROPERTIES AUTOMOC ON)

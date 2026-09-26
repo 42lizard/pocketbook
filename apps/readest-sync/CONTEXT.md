@@ -13,6 +13,10 @@ Readest library.
 A book represented in both the PocketBook and Readest libraries, shown as one
 entry in Readest Sync.
 
+**Book status**:
+The displayed summary of a book's availability and relationship to Readest,
+including removal from Readest or a pending upload.
+
 **PocketBook reading position**:
 The reading location saved by the PocketBook native reader for a device book.
 

@@ -1,4 +1,5 @@
 #include "controller.h"
+#include "book_status.h"
 #include <QCoreApplication>
 #include <QTimer>
 using namespace readest;
@@ -106,7 +107,7 @@ QString AppController::blockingMessage() const {
 }
 QString AppController::hint() const {
     const auto* entry=library_.find(selected_); if(!entry) return {};
-    auto text=(entry->book.book.deleted?QStringLiteral("Removed from Readest"):entry->book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry->availability))+". "+QString::fromStdString(entry->book.book.author);
+    auto text=bookStatusLabel(*entry)+". "+QString::fromStdString(entry->book.book.author);
     if(!entry->book.local_only && !entry->book.book.deleted && entry->book.epubs==0)
         text+=entry->availability==Availability::OnDevice?"\nReadest has progress only. You can upload this local EPUB.":"\nReadest has progress only. No local EPUB is available to upload.";
     text+="\nPocketBook: "+percentageLabel(entry->local_percentage)+" · Readest: "+percentageLabel(entry->remote_percentage);
@@ -114,14 +115,9 @@ QString AppController::hint() const {
 }
 QVariantMap AppController::book() const {
     const auto* entry=library_.find(selected_); if(!entry) return {};
-    auto availability=entry->book.book.deleted?QStringLiteral("Removed from Readest"):
-        entry->upload_pending?QStringLiteral("Upload pending"):
-        entry->book.local_only?QStringLiteral("PocketBook only"):availabilityLabel(entry->availability);
-    if(entry->availability==Availability::OnDevice && entry->book.epubs==0)
-        availability=QStringLiteral("On device · Readest progress only");
     return {{"title",QString::fromStdString(entry->book.book.title.empty()?"Untitled":entry->book.book.title)},
         {"author",QString::fromStdString(entry->book.book.author)},
-        {"availability",availability},{"coverPath",QString::fromStdString(entry->cover)},
+        {"availability",bookStatusLabel(*entry)},{"coverPath",QString::fromStdString(entry->cover)},
         {"pocketBookProgress",percentageLabel(entry->local_percentage)},
         {"readestProgress",percentageLabel(entry->remote_percentage)}};
 }

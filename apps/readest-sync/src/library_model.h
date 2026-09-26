@@ -2,7 +2,6 @@
 #include "application.h"
 #include <QAbstractListModel>
 
-QString availabilityLabel(readest::Availability value);
 QString percentageLabel(double value);
 class LibraryModel : public QAbstractListModel {
     Q_OBJECT
