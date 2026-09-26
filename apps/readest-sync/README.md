@@ -1,24 +1,29 @@
 # Readest Sync
 
-Native PocketBook app for downloading DRM-free EPUBs from Readest Cloud and
-synchronizing reading progress with Readest on iPhone, browser and KOReader.
+Native PocketBook app for browsing local and Readest libraries, transferring
+DRM-free EPUBs, and synchronizing reading progress, highlights and attached notes.
 
-**Status: Qt6 UI starts on InkPad; full acceptance of the latest build is pending.**
-The previous InkView implementation's login, Wi-Fi recovery, downloads,
-bidirectional resume and cover browsing were user-confirmed. Qt Quick now owns
-screens, input, timers and cloud cover decoding, using firmware PocketBook
-controls. InkView remains only in the device adapter for startup, Wi-Fi, native
-reader handoff and local EPUB cover extraction. Existing data formats and native
-progress safeguards are retained. The supported native handoff target remains
-InkPad 4 (PB743G), firmware `U743g.6.11.1683`; Verse Pro is deferred.
-Host tests cover authentication, HTTPS, integrity, download recovery, native
-position safeguards, reconciliation, and Qt UI behavior. The device acceptance
-checklist is at the end of this README. Diagnostic fixture generation and the
-backup-and-verify installer are described below.
+**Device-validated on InkPad 4 (PB743G), firmware `U743g.6.11.1683`.**
+The Qt Quick interface uses PocketBook controls. Library browsing, downloads,
+reader handoff, progress synchronization, bidirectional annotation changes, and
+startup/Home behavior have been checked on this device. Other models and firmware,
+including Verse Pro, require separate validation. Automatic orientation changes
+remain an [open device limitation](https://github.com/42lizard/pocketbook/issues/25);
+the simulator can exercise both layouts.
+
+- [Illustrated user guide](docs/USER-GUIDE.md): library, menus, downloads, reading,
+  position conflicts, highlights and notes.
+- [Installation instructions](release/README.md).
+- [Mock simulator scenarios](../../tools/pocketbook-simulator/apps/readest-sync/README.md).
+- [Annotation protocol and native storage](docs/research/readest-annotation-protocol.md).
+
+The user guide contains screenshots from the **Mock cloud** simulator, with
+synthetic books only. Simulator rendering approximates the firmware controls;
+e-ink refresh, the native keyboard and native reader remain device features.
 
 ## Application structure
 
-QML screens use named commands and explicit controller properties. Library tiles
+QML screens use named commands and explicit controller properties. Library rows
 come from `LibraryModel`, whose roles include account/hash identity, availability,
 cover path and both reading percentages. Search, availability filtering and paging
 operate on this in-memory model; the view supplies its page capacity.
@@ -42,7 +47,9 @@ partial outcome and does not open the reader; the next Sync reconciles fresh sta
 An uncertain native commit is also reported explicitly, without an automatic retry.
 
 `OperationRunner` runs one operation at a time, joins it before publishing its
-result, and owns cancellation, network timeout and keepalive timing. Device
+result, and owns cancellation, network timeout and keepalive timing. Online and
+offline operations prevent standby through result delivery. A one-second firmware
+grace period allows queued UI updates before normal power saving resumes. Device
 connection callbacks retain their own lifetime token: a late callback cannot
 access a destroyed runner. A foreground operation can take over the pending
 connection of a cancelled cover request, retaining its original timeout instead
@@ -77,7 +84,7 @@ work and completions to exercise cancellation, retries and account/page changes.
 commands, independent controller instances, stable book identities, filtering,
 worker shutdown and late callbacks; simulator scenarios cover native sync and
 reader handoff. This refactor does not change persisted formats or native-position
-validation rules. Hardware acceptance of the refactored build is still required.
+validation rules. Device acceptance complements these automated checks; repeat it for new firmware or behavior changes.
 
 ## Build and package
 
@@ -191,7 +198,8 @@ make them confidential through Unix file permissions. Sign-out removes the
 saved session without revoking sessions on the user's other devices.
 
 `operations.log` records refresh phases, process IDs, timestamps and peak memory
-in KiB to help diagnose device exits. It contains no credentials or book data and
+in KiB to help diagnose device exits. It includes monotonic milliseconds for
+elapsed-time comparisons; the wall clock alone can change or span suspend. It contains no credentials or book data and
 is truncated at 64 KiB. It is a best-effort phase log, not a crash backtrace.
 
 New EPUB downloads use `Title - Author.epub` (or `Title.epub` when no author is
@@ -200,15 +208,18 @@ are replaced with spaces and long names are shortened. Separate managed
 directories prevent books with the same name from overwriting each other.
 Existing downloads keep their filenames and reading positions.
 
-Existing EPUBs on internal storage and SD card are matched to the Readest library
-by content hash during refresh and before a download. Startup displays the cached
-library without a device-wide scan. Matching books
-are registered at their original paths; they are not copied, renamed, or modified.
-Use **Scan device** to find newly copied books without Wi-Fi. Scans run in the
-background and can be cancelled; large collections take longer to inspect.
-System/hidden folders, symlinks, and the app's managed download directory are
-excluded (managed downloads use their account-specific recovery metadata).
-Only matching Readest library entries are linked; unrelated books are left alone.
+Startup loads cached cloud metadata and scans the **PocketBook library index**
+without requesting Wi-Fi. It does not recursively walk every storage directory.
+Indexed EPUBs appear even when signed out. **Menu → Scan device** updates this
+inventory; **Refresh library** also refreshes cloud metadata and availability.
+Unindexed files must first be discovered by the PocketBook library.
+
+Matching uses EPUB content fingerprints rather than titles. Existing files stay
+at their original paths; they are not copied or renamed. File stamps retain
+fingerprints and metadata for unchanged EPUBs. The first inventory inserts its
+rows; later scans insert new rows, update changed rows and remove missing rows.
+Unchanged rows are not rewritten. Removing an inventory row does not delete an
+EPUB or remove a book from Readest.
 
 Each managed download has a metadata file recording its account, Readest book
 hash, original-byte SHA-256, size and filename. Recovery validates completed
@@ -217,12 +228,12 @@ invalid metadata or duplicate local copies are reported.
 
 ## Large libraries
 
-Discovery persists candidate fingerprints keyed by path, size, device/inode and
-modification/change timestamps. Unchanged candidates need no EPUB content reads.
-New candidates use Readest's bounded partial fingerprint (at most twelve 1 KiB
-samples). Only matching candidates undergo full SHA-256 and archive validation
-before registration. Opening and syncing still verify the original EPUB bytes.
-Matches and candidate-index updates are each committed as a batch.
+The indexed library scan caches fingerprints and metadata by path, size,
+device/inode and modification/change timestamps. Unchanged files need no EPUB
+content reads. Changed files use Readest's bounded partial fingerprint (at most
+twelve 1 KiB samples) and reload their metadata. Opening, syncing and transferring
+still validate the original EPUB bytes. A first launch after USB or a changed
+file stamp can take longer than a subsequent launch.
 
 The library snapshot loads saved sync metadata in one query and native percentages
 in one grouped query. Cover checks read headers rather than whole image files.
@@ -317,10 +328,11 @@ a default route. The app waits up to 60 seconds and refreshes
 the Wi-Fi power-off timer every 30 seconds while an online action is active.
 Keepalive calls run off the UI thread, with at most one in flight, so a stalled
 firmware network manager cannot block Cancel or the connection timeout.
-Online actions also prevent CPU standby while connecting and transferring, so
-background work and the connection deadline can continue without screen taps.
-Completion, failure, cancellation, and exit release that protection and stop
-the keepalive. Normal OS power saving resumes afterward. Startup, sign-out, and
+All service operations, including offline startup and scans, prevent CPU standby
+through the UI completion callback. A one-second firmware grace period then
+allows queued rendering to complete. Failure, cancellation and exit also release
+the protection; the app does not permanently disable power saving. Network
+keepalive remains limited to online operations. Startup, sign-out, and
 **Read offline** do not request Wi-Fi.
 
 Temporary diagnostics remain enabled in `system/readest-sync/network.log`.
@@ -363,14 +375,14 @@ Successful sign-in atomically replaces the session file. Download records and
 reading state remain intact. Explicit conflict choices can restore a missing
 position from the valid selected side; selecting an empty position is rejected.
 
-### Tiled library
+### Library list and book details
 
 Library refresh uses limited requests and retains the API’s trailing timestamp
 ties. Repeated fractional-millisecond boundaries use bounded lookahead, up to a
 requested limit of 1,000 rows. Responses remain capped at 4 MiB; an unresolved
 or oversized boundary reports an error without advancing the cursor.
 
-Each tile shows separate **PocketBook** and **Readest** reading percentages.
+Book details show separate **PocketBook** and **Readest** reading percentages.
 PocketBook uses saved native page counts, read directly from the firmware
 database in a short read-only transaction at startup, after operations, and on
 return from the reader. Readest uses the
@@ -379,11 +391,16 @@ library values. `—` means no usable saved percentage is available. The readers
 paginate differently, so their percentages can differ at the same location.
 These labels are display-only and never determine a sync position.
 
-The library shows six book tiles in portrait and four in landscape, with title,
-author and file availability. Tap a tile for its actions. Use **Previous/Next**
-or the hardware page buttons to change pages; search still filters title/author.
-Choose **All books**, **Available to download**, **On device**, or **Progress only**
-above the tiles. Availability filters combine with search and reset pagination.
+The library uses full-width rows with a small cover, title, author and status.
+Tap a row for book details. The footer arrows and hardware page buttons change
+pages. **Menu** opens search, filters, refresh, device scan and account actions.
+The hardware menu key uses the same menu and is disabled during blocking actions.
+Long-pressing a row offers its available contextual actions.
+
+Search matches title or author. Filters include **All books**, **Available to
+download**, **On device**, **Progress only**, and **PocketBook only**. Search and
+filters combine and reset pagination. Page capacity depends on the layout and
+screen size.
 
 - **On device**: a downloaded or matched existing EPUB is present locally.
 - **Available to download**: no local copy is linked and Readest storage lists one supported EPUB.
@@ -395,7 +412,7 @@ above the tiles. Availability filters combine with search and reset pagination.
 
 Choose **Refresh library** once after installing this update. It checks the
 account's paginated storage listing and saves availability for offline browsing.
-Cloud covers are downloaded for visible tiles in the background after refresh,
+Cloud covers are downloaded for visible rows in the background after refresh,
 not for the entire library before it becomes usable. Book actions take priority
 over this background work. When the storage listing
 has no cover entry, the app also asks Readest for its canonical cover key, as
@@ -443,9 +460,10 @@ docker compose run --rm qt6 python3 tools/check_qt6_firmware.py \
   build/readest-sync/readest-sync.app build/readest-sync/firmware-6.11.1683
 ```
 
-Before accepting the migration on InkPad, test launch, native keyboard sign-in,
-refresh, all library pages (especially 8/9), Wi-Fi recovery, an EPUB download,
-Read offline, native-reader return, and both progress conflict choices.
+For future device acceptance, test launch and Home exit, native keyboard sign-in,
+refresh and paging, Wi-Fi recovery, an EPUB download, Read offline, native-reader
+return, both progress conflict choices, and highlight/note creation, editing and
+deletion in both directions. Repeat Sync to check that it creates no duplicates.
 
 ## PocketBook library and uploads
 
@@ -479,4 +497,34 @@ Interrupted uploads retain their completed stages across restarts and require
 check the remote state and use the latest local position. Pending work belongs
 to the account that started it. Removing a local file changes its device
 availability, but does not delete its Readest entry. There are no automatic or
-bulk uploads and no synchronized deletion.
+bulk EPUB uploads and no synchronized deletion of EPUB files. Annotation
+deletions are synchronized separately, as described below.
+
+## Highlights and attached notes
+
+For a linked, verified EPUB, **Sync now** and online **Open** reconcile highlights
+and their attached text notes in both directions. Create, edit or delete them in
+the native PocketBook reader or Readest, close the native reader, then sync the
+book. **Refresh library** does not synchronize every book's annotations, and
+**Read offline** makes no cloud request. The app has no annotation editor or list;
+inspect the annotations in the readers.
+
+Annotation writes are enabled only for the validated PB743G firmware above.
+Passage ranges must resolve against the same EPUB text; unsupported ranges,
+styles or colors are skipped with a warning. Conflicting edits are retained and
+reported rather than silently choosing one side. A warning can leave annotation
+sync incomplete even when opening the book succeeds. Do not interpret the
+reading-position conflict buttons as annotation conflict resolution controls.
+
+An app-owned journal records native/cloud identities, baselines and pending
+uploads. Retries reuse their identities to avoid duplicates. Native reads use a
+short read-only SQLite transaction; native writes use a guarded transaction with
+an unchanged-state check. Neither operation copies the complete firmware DB.
+Cloud acknowledgements and a fresh preflight read are checked, but Readest's API
+has no conditional-write operation, so a concurrent cloud edit still has a race
+window. Avoid editing the same note on two devices while a sync is in progress.
+
+Device validation covered a Readest edit arriving on PocketBook, a PocketBook
+replacement arriving in the sync journal with matching cloud state, deletions,
+and repeated synchronization. Automated checks additionally cover interrupted
+uploads, retries, stale responses, unsupported replacements and conflicts.

@@ -52,7 +52,8 @@ pixels in the remote display, not browser HTML inputs.
 Open **Simulator → Cloud service** and choose:
 
 - **Mock cloud**: local demo account, 51 generated books, configurable HTTP and
-  download failures, and simulated reading-position conflicts. Requests never
+  download failures, and simulated reading-position conflicts. Annotation storage and the notes
+  endpoint are also modeled for automated sync tests. Requests never
   fall back to the network. Use **Sign in to demo account**, then **Refresh library**.
 - **Real Readest**: the app's existing HTTPS client connects to Readest. Hide the
   simulator panel, enter your real credentials in the app, and refresh your
@@ -70,6 +71,8 @@ Real-mode reader handoff shows the downloaded EPUB's path; it does not render
 that EPUB or manufacture native reading positions. Login, library, covers and
 downloads can be tested against the live account. Actual reading and passage
 interoperability still need a device or an eventual desktop reader integration.
+
+For feature screenshots, see the [illustrated user guide](../../apps/readest-sync/docs/USER-GUIDE.md).
 
 See [Readest scenarios](apps/readest-sync/README.md) for mock sync and recovery tests.
 

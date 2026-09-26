@@ -73,6 +73,18 @@ int main(int argc,char** argv) {
     engine.load(QUrl("qrc:/Main.qml")); assert(!engine.rootObjects().isEmpty());
     auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); assert(window);
     sim.attach(engine,control);
+    const auto documentation=qEnvironmentVariable("READEST_DOC_SCREENSHOTS");
+    auto capture=[&](const char* name) {
+        if(documentation.isEmpty()) return;
+        assert(!sim.realCloud());
+        auto* overlay=window->findChild<QQuickItem*>("simulatorOverlay"); assert(overlay);
+        const bool wasOpen=overlay->property("panelOpen").toBool();
+        overlay->setProperty("panelOpen",false);
+        settle(250);
+        assert(QDir().mkpath(documentation));
+        assert(window->grabWindow().save(documentation+"/"+name+".png"));
+        overlay->setProperty("panelOpen",wasOpen);
+    };
     if(sim.realCloud()) {
         // A mock session at the old location must not sign in the real profile.
         assert(QDir().mkpath(scratch.path()+"/system/readest-sync"));
@@ -124,6 +136,12 @@ int main(int argc,char** argv) {
     assert(control.library()->entries().size()==51 && control.library()->pages()==7);
     settle(1500); // Only the visible covers load after the metadata refresh completes.
     assert(!control.library()->at(0).cover.empty());
+    capture("library");
+    if(!documentation.isEmpty()) {
+        sim.button(Qt::Key_Menu); settle();
+        capture("library-menu");
+        sim.button(Qt::Key_Menu); settle();
+    }
     sim.network(3); control.refreshLibrary(); assert(control.busy()); finish(control);
     assert(control.status().toStdString().find("timed out")!=std::string::npos);
     control.refreshLibrary(); assert(control.status().toStdString().find("still finishing")!=std::string::npos);
@@ -147,14 +165,17 @@ int main(int argc,char** argv) {
     }
     sim.transfer(0); action(control,"Download EPUB");
     assert(!current().book.path.empty());
+    capture("book-details");
     const auto path=current().book.path;
     action(control,"Read offline"); assert(!sim.readerPath().isEmpty() && sim.chapter()==1);
+    capture("mock-reader");
     sim.closeReader(); finish(control);
     action(control,"Sync now"); assert(control.status()=="Reading positions are synchronized.");
     sim.remoteChapter(2); action(control,"Sync now"); assert(control.status().startsWith("Readest position downloaded"));
     action(control,"Open at Readest position"); assert(sim.chapter()==2 && !sim.readerPath().isEmpty());
     sim.turnReader(1); sim.closeReader(); finish(control);
     sim.remoteChapter(1); action(control,"Sync now"); assert(control.status().startsWith("Both positions differ"));
+    capture("position-conflict");
     auto* conflictDetails=activeItem(window,"nativeBookDetailsPage"); assert(conflictDetails);
     sim.button(Qt::Key_Menu); settle(); assert(!conflictDetails->property("menuOpen").toBool());
     action(control,"Use Readest position");
