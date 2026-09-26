@@ -1,5 +1,6 @@
 // Link the production controller/model/runner normally; test public contracts.
 #include "controller.h"
+#include "book_status.h"
 #include "cover_provider.h"
 #include "network_route.h"
 #include <QTemporaryDir>
@@ -54,6 +55,49 @@ static ApplicationConfig configAt(const QString& base) {
     config.transport.download=[](const std::string&,int,const std::string&,size_t,const std::atomic<bool>&) -> HttpResponse { throw std::runtime_error("Unexpected download"); };
     assert(QDir().mkpath(QString::fromStdString(config.root)));
     return config;
+}
+static void bookStatusChecks() {
+    struct Scenario {
+        Availability availability;
+        int epubs;
+        bool deleted,upload_pending,local_only;
+        const char* expected;
+    };
+    const Scenario scenarios[]={
+        {Availability::OnDevice,0,true,true,false,"Removed from Readest"},
+        {Availability::OnDevice,0,true,false,false,"Removed from Readest"},
+        {Availability::OnDevice,0,false,true,false,"Upload pending"},
+        {Availability::OnDevice,0,false,true,true,"Upload pending"},
+        {Availability::OnDevice,0,false,false,true,"PocketBook only"},
+        {Availability::OnDevice,0,false,false,false,"On device · Readest progress only"},
+        {Availability::OnDevice,1,false,false,false,"On device"},
+        {Availability::Downloadable,1,false,false,false,"Available to download"},
+        {Availability::ProgressOnly,0,false,false,false,"Progress only"},
+        {Availability::Unknown,0,false,false,false,"Not checked"},
+        {Availability::Unavailable,0,false,false,false,"EPUB unavailable"},
+        {Availability::Multiple,2,false,false,false,"Multiple EPUBs"},
+        {Availability::Removed,0,false,false,false,"Removed from cloud"},
+        {Availability::Removed,0,true,false,false,"Removed from Readest"}
+    };
+    QTemporaryDir temp; assert(temp.isValid());
+    AppController control(configAt(temp.path()),DeviceAccess{});
+    assert(control.book().isEmpty() && control.hint().isEmpty());
+    for(const auto& scenario:scenarios) {
+        LibraryEntry entry;
+        entry.id={"fixture-user",std::string(32,'a')};
+        entry.book.book.author="Fixture author";
+        entry.availability=scenario.availability;entry.book.epubs=scenario.epubs;
+        entry.book.book.deleted=scenario.deleted;entry.upload_pending=scenario.upload_pending;
+        entry.book.local_only=scenario.local_only;
+        const auto expected=QString::fromUtf8(scenario.expected);
+        assert(bookStatusLabel(entry)==expected);
+        auto* model=control.library();
+        model->replace({entry});
+        control.selectBook(QString::fromStdString(entry.id.account),QString::fromStdString(entry.id.hash));
+        assert(model->data(model->index(0),LibraryModel::Availability).toString()==expected);
+        assert(control.book().value("availability").toString()==expected);
+        assert(control.hint().startsWith(expected+". Fixture author\n"));
+    }
 }
 static void runnerChecks() {
     {
@@ -219,7 +263,7 @@ static void runnerChecks() {
 }
 int main(int argc,char** argv) {
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
-    QGuiApplication app(argc,argv); runnerChecks();
+    QGuiApplication app(argc,argv); bookStatusChecks(); runnerChecks();
     QTemporaryDir temp; assert(temp.isValid());
     auto config=configAt(temp.path());
     std::atomic<int> cover_requests{0};

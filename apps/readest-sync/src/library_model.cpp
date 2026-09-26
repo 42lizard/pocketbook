@@ -1,19 +1,7 @@
 #include "library_model.h"
+#include "book_status.h"
 #include <algorithm>
 QString percentageLabel(double value) { return value<0?QStringLiteral("—"):QString::number(value,'f',1)+"%"; }
-QString availabilityLabel(readest::Availability value) {
-    using readest::Availability;
-    switch(value) {
-    case Availability::OnDevice: return "On device";
-    case Availability::Downloadable: return "Available to download";
-    case Availability::ProgressOnly: return "Progress only";
-    case Availability::Unknown: return "Not checked";
-    case Availability::Unavailable: return "EPUB unavailable";
-    case Availability::Multiple: return "Multiple EPUBs";
-    case Availability::Removed: return "Removed from cloud";
-    }
-    return {};
-}
 int LibraryModel::rowCount(const QModelIndex& parent) const {
     return parent.isValid()?0:std::max(0,std::min(capacity_,count()-page_*capacity_));
 }
@@ -27,8 +15,7 @@ QVariant LibraryModel::data(const QModelIndex& index,int role) const {
     case BookHash: return QString::fromStdString(entry.id.hash);
     case Title: return QString::fromStdString(book.title.empty()?"Untitled":book.title);
     case Author: return QString::fromStdString(book.author);
-    case Availability: return book.deleted?QStringLiteral("Removed from Readest"):entry.upload_pending?QStringLiteral("Upload pending"):entry.book.local_only?QStringLiteral("PocketBook only"):
-        entry.availability==readest::Availability::OnDevice && entry.book.epubs==0?QStringLiteral("On device · Readest progress only"):availabilityLabel(entry.availability);
+    case Availability: return bookStatusLabel(entry);
     case Cover: return QString::fromStdString(entry.cover);
     case LocalPath: return QString::fromStdString(entry.book.path);
     case LocalProgress: return percentageLabel(entry.local_percentage);
