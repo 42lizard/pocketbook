@@ -163,6 +163,7 @@ State::State(const std::string& path) {
             "CREATE TABLE IF NOT EXISTS copy_choices(user TEXT,hash TEXT,path TEXT,PRIMARY KEY(user,hash));"
             "CREATE TABLE IF NOT EXISTS local_integrity(path TEXT PRIMARY KEY,stamp TEXT,sha256 TEXT);"
             "CREATE TABLE IF NOT EXISTS uploads(user TEXT,hash TEXT,stage INTEGER,sha256 TEXT,PRIMARY KEY(user,hash));"
+            "CREATE TABLE IF NOT EXISTS annotation_sync(user TEXT,hash TEXT,path TEXT,sha256 TEXT,data TEXT NOT NULL,PRIMARY KEY(user,hash,path,sha256));"
             "PRAGMA user_version=1; COMMIT;");
     } catch (...) { sqlite3_close(db_); db_ = nullptr; throw; }
 }
@@ -429,3 +430,17 @@ std::vector<std::string> recover_downloads(State& state, const std::string& user
     return warnings;
 }
 } // namespace readest
+
+namespace readest {
+std::string State::annotations(const std::string& user,const std::string& hash,const std::string& path,const std::string& sha) {
+    identity(user,hash);
+    Query q(db_,"SELECT data FROM annotation_sync WHERE user=? AND hash=? AND path=? AND sha256=?");
+    q.bind(1,user); q.bind(2,hash); q.bind(3,path); q.bind(4,sha);
+    return q.row()?q.text(0):"{\"entries\":[]}";
+}
+void State::save_annotations(const std::string& user,const std::string& hash,const std::string& path,const std::string& sha,const std::string& data) {
+    identity(user,hash); parse_json(data);
+    Query q(db_,"INSERT OR REPLACE INTO annotation_sync(user,hash,path,sha256,data) VALUES(?,?,?,?,?)");
+    q.bind(1,user); q.bind(2,hash); q.bind(3,path); q.bind(4,sha); q.bind(5,data); q.row();
+}
+}

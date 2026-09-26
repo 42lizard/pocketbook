@@ -64,27 +64,25 @@ std::string point_cfi(const std::string& position) {
     return at + 1 == s.size() && s[at] == ')' ? s : "";
 }
 
-std::string readest_start_cfi(const std::string& s) {
+std::pair<std::string, std::string> readest_range_cfi(const std::string& s) {
     if (s.size() > 8192 || s.compare(0, 8, "epubcfi(") != 0 || s.back() != ')')
-        return "";
-    auto point = point_cfi(s);
-    if (!point.empty()) return point;
+        return {};
     // Commas inside assertions are not range separators. Use the same
     // assertion grammar as point_cfi, including escaped brackets/commas.
     std::vector<size_t> commas;
     for (size_t at = 8; at + 1 < s.size();) {
         if (s[at] == '[') {
-            if (!assertion(s, at)) return "";
+            if (!assertion(s, at)) return {};
         } else {
             if (s[at] == ',') commas.push_back(at);
             ++at;
         }
     }
-    if (commas.size() != 2) return "";
+    if (commas.size() != 2) return {};
     const auto parent = s.substr(0, commas[0]);
     size_t at = 8;
     if (!path(parent, at) || at >= parent.size() || parent[at++] != '!' ||
-        !path(parent, at) || at != parent.size()) return "";
+        !path(parent, at) || at != parent.size()) return {};
     const auto start = s.substr(commas[0] + 1, commas[1] - commas[0] - 1);
     const auto end = s.substr(commas[1] + 1, s.size() - commas[1] - 2);
     // A relative endpoint may extend the path or supply a text offset.
@@ -92,11 +90,18 @@ std::string readest_start_cfi(const std::string& s) {
     // Readest itself rejects empty-start ranges as malformed saved locations.
     if (start.empty() || (start[0] != '/' && start[0] != ':') ||
         end.empty() || (end[0] != '/' && end[0] != ':') ||
-        s.find(';') != std::string::npos) return "";
+        s.find(';') != std::string::npos) return {};
     const auto first = point_cfi(parent + start + ")");
     const auto last = point_cfi(parent + end + ")");
-    if (first.empty() || last.empty() || compare_cfi(first, last) > 0) return "";
-    return first;
+    if (first.empty() || last.empty() || compare_cfi(first, last) > 0) return {};
+    return {first, last};
+}
+
+std::string readest_start_cfi(const std::string& s) {
+    if (s.compare(0, 8, "epubcfi(") != 0) return "";
+    const auto point = point_cfi(s);
+    if (!point.empty()) return point;
+    return readest_range_cfi(s).first;
 }
 
 int compare_cfi(const std::string& left, const std::string& right) {

@@ -58,6 +58,9 @@ public:
     SavedSync sync(const std::string& user, const std::string& hash);
     // Returns the revision committed by this write.
     long long save_sync(const std::string& user, const std::string& hash, const SavedSync& next);
+    // Durable per-account, exact-copy annotation baselines and retry journal.
+    std::string annotations(const std::string& user,const std::string& hash,const std::string& path,const std::string& sha);
+    void save_annotations(const std::string& user,const std::string& hash,const std::string& path,const std::string& sha,const std::string& data);
 private:
     sqlite3* db_ = nullptr;
 };

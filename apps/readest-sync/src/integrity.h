@@ -15,4 +15,7 @@ BookIntegrity inspect_epub(const std::string& path);
 // Resolve a CREngine element/text XPointer in the original EPUB. Throws when
 // structure or offset cannot be resolved exactly; never uses percentages.
 std::string xpointer_cfi(const std::string& path, const std::string& xpointer);
+// Verify exact text-node range against original EPUB bytes (UTF-16 offsets).
+void validate_annotation_range(const std::string& path,const std::string& begin,
+                               const std::string& end,const std::string& selected);
 } // namespace readest

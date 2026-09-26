@@ -1,4 +1,5 @@
 #include "application.h"
+#include "annotations.h"
 #include "upload.h"
 #include <stdexcept>
 #include <ctime>
@@ -129,6 +130,15 @@ void ApplicationService::synchronize(const Request& request, OperationResult& re
         transition.outcome==ResumeOutcome::Applied ||
         (request.choice==ProgressChoice::Readest && result.sync_action==SyncAction::ApplyRemote)))
         state_->save_upload(request.book.account,request.book.hash,{});
+    if(!config_.annotations_database.empty() && transition.outcome!=ResumeOutcome::SyncUnavailable &&
+       transition.outcome!=ResumeOutcome::CommitUncertain && transition.outcome!=ResumeOutcome::AppliedUnrecorded) {
+        try { sync_annotations(*cloud_,*state_,verified,native,config_.annotations_database,time(nullptr),config_.model,config_.firmware,cancel); }
+        catch(const std::exception& e) {
+            check_cancel(cancel);
+            if(!result.progress_warning.empty()) result.progress_warning+=" ";
+            result.progress_warning+="Annotations: "+std::string(e.what());
+        }
+    }
     switch(transition.outcome) {
     case ResumeOutcome::NotRequested: case ResumeOutcome::Blocked: return;
     case ResumeOutcome::NoPending: break;

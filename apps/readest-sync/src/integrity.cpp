@@ -1,4 +1,6 @@
 #include "integrity.h"
+#include "probe.h"
+#include <functional>
 #include "vendor/miniz/miniz.h"
 #include <openssl/evp.h>
 #include <libxml/parser.h>
@@ -388,5 +390,122 @@ std::string xpointer_cfi(const std::string& path,const std::string& pointer) {
         cfi+="/"+std::to_string(elements*2+1)+":"+std::to_string(raw_offset);
     }
     return cfi+")";
+}
+
+void validate_annotation_range(const std::string& path,const std::string& begin,
+                               const std::string& end,const std::string& selected) {
+    // Resolve both endpoints against the exact EPUB, including UTF-16 offsets.
+    // Unsupported assertion forms fail closed instead of moving a highlight.
+    struct Step { unsigned n; std::string id; };
+    struct Point { std::vector<Step> package,content; unsigned offset=0; };
+    auto parse=[](const std::string& cfi) {
+        if(point_cfi(cfi).empty()) throw std::runtime_error("Unsupported annotation CFI");
+        Point p; auto bang=cfi.find('!');
+        auto steps=[](const std::string& s,std::vector<Step>& out,unsigned* offset) {
+            size_t at=0;
+            while(at<s.size() && s[at]=='/') {
+                size_t start=++at; while(at<s.size() && std::isdigit(static_cast<unsigned char>(s[at]))) ++at;
+                if(at-start>7) throw std::runtime_error("Annotation CFI index is too large");
+                Step step{static_cast<unsigned>(std::stoul(s.substr(start,at-start))),{}};
+                if(at<s.size() && s[at]=='[') {
+                    ++at;
+                    while(at<s.size() && s[at]!=']') { if(s[at]=='^') ++at; step.id+=s.at(at++); }
+                    if(at==s.size()) throw std::runtime_error("Invalid annotation assertion");
+                    ++at;
+                }
+                out.push_back(step);
+            }
+            if(offset && at<s.size() && s[at]==':') {
+                auto value=s.substr(at+1);
+                if(value.empty() || value.size()>7 || value.find_first_not_of("0123456789")!=std::string::npos)
+                    throw std::runtime_error("Unsupported annotation text assertion");
+                *offset=static_cast<unsigned>(std::stoul(value)); at=s.size();
+            }
+            if(at!=s.size()) throw std::runtime_error("Unsupported annotation path");
+        };
+        steps(cfi.substr(8,bang-8),p.package,nullptr);
+        steps(cfi.substr(bang+1,cfi.size()-bang-2),p.content,&p.offset);
+        if(p.package.size()!=2 || p.content.empty() || !(p.content.back().n%2))
+            throw std::runtime_error("Annotation must end in a text node");
+        return p;
+    };
+    const auto first=parse(begin), last=parse(end);
+    if(first.package[0].n!=last.package[0].n || first.package[1].n!=last.package[1].n)
+        throw std::runtime_error("Annotations spanning EPUB chapters are unsupported");
+    int fd=open(path.c_str(),O_RDONLY|O_NOFOLLOW);
+    if(fd<0) throw std::runtime_error("Cannot read annotation EPUB");
+    struct stat st;
+    if(fstat(fd,&st) || !S_ISREG(st.st_mode) || st.st_size<=0 || st.st_size>256LL*1024*1024) {
+        close(fd); throw std::runtime_error("Invalid annotation EPUB");
+    }
+    FILE* raw=fdopen(fd,"rb"); if(!raw) {close(fd);throw std::runtime_error("Cannot read annotation EPUB");}
+    std::unique_ptr<FILE,int(*)(FILE*)> file(raw,fclose); Zip zip(raw,st.st_size);
+    auto container=xml(zip.read("META-INF/container.xml",1024*1024));
+    auto package_path=property(child(child(xmlDocGetRootElement(container.get()),"rootfiles"),"rootfile"),"full-path");
+    if(!safe_path(package_path)) throw std::runtime_error("Invalid EPUB package path");
+    auto package=xml(zip.read(package_path,4*1024*1024)); auto* root=xmlDocGetRootElement(package.get());
+    auto element=[](xmlNode* parent,const Step& step) {
+        if(step.n%2 || !step.n) throw std::runtime_error("Unsupported annotation element");
+        auto index=step.n/2; xmlNode* result=nullptr;
+        for(auto* n=parent->children;n;n=n->next) if(n->type==XML_ELEMENT_NODE && --index==0) {result=n;break;}
+        if(!result || (!step.id.empty() && property(result,"id")!=step.id))
+            throw std::runtime_error("Annotation element does not match EPUB");
+        return result;
+    };
+    auto* spine=element(root,first.package[0]); auto* itemref=element(spine,first.package[1]);
+    if(!named(spine,"spine") || !named(itemref,"itemref")) throw std::runtime_error("Invalid annotation spine");
+    element(element(root,last.package[0]),last.package[1]);
+    std::string href;
+    for(auto* n=child(root,"manifest")->children;n;n=n->next) if(named(n,"item") && property(n,"id")==property(itemref,"idref")) {
+        if(!href.empty() || property(n,"media-type")!="application/xhtml+xml") throw std::runtime_error("Unsupported annotation resource");
+        href=property(n,"href");
+    }
+    auto slash=package_path.rfind('/');
+    auto doc=chapter_xml(zip.read(zip_relative(slash==std::string::npos?"":package_path.substr(0,slash+1),href),16*1024*1024));
+    auto* html=xmlDocGetRootElement(doc.get());
+    if(!named(html,"html")) throw std::runtime_error("Invalid annotation document");
+    std::vector<unsigned> text;
+    std::map<xmlNode*,size_t> starts;
+    const std::set<std::string> blocks={"p","div","section","li","h1","h2","h3","h4","h5","h6","br","blockquote"};
+    std::function<void(xmlNode*)> flatten=[&](xmlNode* node) {
+        for(auto* n=node;n;n=n->next) {
+            bool block=n->type==XML_ELEMENT_NODE && blocks.count(reinterpret_cast<const char*>(n->name));
+            if(block) text.push_back('\n');
+            if(n->type==XML_TEXT_NODE || n->type==XML_CDATA_SECTION_NODE) {
+                starts[n]=text.size(); auto units=utf16(n->content); text.insert(text.end(),units.begin(),units.end());
+            } else if(n->type==XML_ELEMENT_NODE) flatten(n->children);
+            if(block) text.push_back('\n');
+        }
+    };
+    flatten(html);
+    auto resolve=[&](const Point& p) {
+        auto* parent=html;
+        for(size_t i=0;i+1<p.content.size();++i) parent=element(parent,p.content[i]);
+        const auto& step=p.content.back();
+        if(!step.id.empty()) throw std::runtime_error("Unsupported annotation text assertion");
+        unsigned slot=1,remaining=p.offset; bool found=false;
+        for(auto* n=parent->children;n;n=n->next) {
+            if(n->type==XML_ELEMENT_NODE) {slot+=2;continue;}
+            if(slot!=step.n || (n->type!=XML_TEXT_NODE && n->type!=XML_CDATA_SECTION_NODE)) continue;
+            found=true; auto units=utf16(n->content);
+            if(remaining<=units.size()) {
+                if(remaining && remaining<units.size() && units[remaining]>=0xdc00 && units[remaining]<=0xdfff)
+                    throw std::runtime_error("Annotation splits a Unicode character");
+                return starts.at(n)+remaining;
+            }
+            remaining-=units.size();
+        }
+        throw std::runtime_error(found?"Annotation text offset exceeds EPUB text":"Annotation text node is missing");
+    };
+    auto a=resolve(first), b=resolve(last);
+    if(a>=b) throw std::runtime_error("Empty or reversed annotation range");
+    auto normalized=[](const std::vector<unsigned>& input) {
+        std::vector<unsigned> result;
+        for(auto c:input) { if(blank(c)) {if(!result.empty() && result.back()!=32) result.push_back(32);} else result.push_back(c); }
+        if(!result.empty() && result.back()==32) result.pop_back(); return result;
+    };
+    const auto expected=utf16(reinterpret_cast<const xmlChar*>(selected.c_str()));
+    if(selected.find('\0')!=std::string::npos || normalized(std::vector<unsigned>(text.begin()+a,text.begin()+b))!=normalized(expected))
+        throw std::runtime_error("Annotation text does not match its EPUB range");
 }
 } // namespace readest
