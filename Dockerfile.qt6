@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl python3 pkg-config ninja-build patch \
     libssl-dev:armel libcurl4-openssl-dev:armel libxml2-dev:armel \
     libsqlite3-dev:armel libjson-c-dev:armel libpng-dev:armel \
-    qt6-base-dev qt6-declarative-dev qt6-sensors-dev \
+    qt6-base-dev qt6-declarative-dev qt6-sensors-dev libqt6sql6-sqlite \
     libssl-dev libcurl4-openssl-dev libxml2-dev libsqlite3-dev libjson-c-dev libpng-dev \
     qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtqml-workerscript \
     && rm -rf /var/lib/apt/lists/*
