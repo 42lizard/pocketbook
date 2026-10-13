@@ -1,0 +1,3 @@
+[submodule "external/kobalt"]
+	path = external/kobalt
+	url = https://github.com/42lizard/kobalt.git

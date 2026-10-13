@@ -16,6 +16,10 @@ Other devices, including Verse Pro, need separate validation.
 
 ## Build
 
+An isolated [Kobalt port experiment](tools/kobalt-probe/README.md) pins
+`42lizard/kobalt` under `external/kobalt` and checks PocketBook build prerequisites.
+It is not yet a working reader and is excluded from the normal app builds below.
+
 With Docker and Compose running, from the repository root:
 
 ```sh

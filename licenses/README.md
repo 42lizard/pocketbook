@@ -35,6 +35,14 @@ not copies of the firmware controls.
 
 ## Notice provenance and scope
 
+The optional `external/kobalt` submodule retains Nico Verbruggen's
+[Kobalt license](../external/kobalt/LICENSE),
+[acknowledgements](../external/kobalt/ACKNOWLEDGEMENTS.md) and dependency notices.
+The compatibility probe compiles its publication component and links Qt Widgets;
+it does not bundle CREngine. A complete reader port must preserve the separate
+license/source inventory described in Kobalt's README; the root MIT license does
+not relicense Kobalt's combined reader package.
+
 The `*-copyright.txt` files are unmodified Debian package notices retrieved from
 the project's existing Qt build image on 2026-09-14. Standard license texts are
 copied from that image's `/usr/share/common-licenses`; references to that directory
