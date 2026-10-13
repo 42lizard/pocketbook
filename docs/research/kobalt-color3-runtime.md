@@ -128,6 +128,29 @@ docker compose run --rm qt6 arm-linux-gnueabi-readelf --wide --dyn-syms \
   /workspace/build/kobalt/firmware-color3/runtime/lib/libinkview.so
 ```
 
+## Qt Widgets startup compatibility
+
+The first device launches reached the start screen and then crashed in
+`QRegion::operator+=`, called by `QApplication::compressEvent`. The native GDB
+capture is retained locally in `build/kobalt/startup-debug/device-attempt-4.log`.
+The QPA caller's return address maps to ELF virtual address `0x22548` in
+`libqpocketbook2.so`. ARM disassembly immediately before that address shows a
+12-byte allocation, `QEvent::QEvent` with type 78 (`UpdateLater`), and
+`QCoreApplication::postEvent`. This is a plain event without a region payload.
+
+[Qt 6.8.2's QWidget event compression](https://github.com/qt/qtbase/blob/v6.8.2/src/widgets/kernel/qapplication.cpp#L785-L835)
+assumes that duplicate `UpdateLater` events carry a private `QUpdateLaterEvent`
+region. Posting two plain events to one QObject reproduces a segmentation fault
+on host Qt 6.8.2 as well. The PocketBook application subclass delegates these
+non-widget updates to the QGuiApplication path; QWidget receivers retain their
+normal compression. The public event-queue regression test fails before the
+change and verifies delivery of both updates afterward. The EPUB reopen test
+also passes. Device confirmation remains pending.
+
+The same device capture reports a 1404×1735 window on a 1404×1872 screen, with
+device pixel ratio 1. The reported small top-left interface therefore still
+needs a separate scaling check after startup is stable.
+
 ## Remaining validation
 
 - Compare the completed port's imports and packaged dependency set to these
