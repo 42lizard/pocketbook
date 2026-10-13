@@ -16,9 +16,11 @@ Other devices, including Verse Pro, need separate validation.
 
 ## Build
 
-An isolated [Kobalt port experiment](tools/kobalt-probe/README.md) pins
-`42lizard/kobalt` under `external/kobalt` and checks PocketBook build prerequisites.
-It is not yet a working reader and is excluded from the normal app builds below.
+The experimental [Kobalt reader port](apps/kobalt/README.md) targets **InkPad
+Color 3 (PB743K3), U743k3.6.10.2854**. It reuses Kobalt's EPUB renderer and
+reading interface through the `external/kobalt` fork. It has separate build
+and packaging commands; the normal app builds below remain unchanged.
+Host reading tests and firmware import checks pass; device acceptance is pending.
 
 With Docker and Compose running, from the repository root:
 
