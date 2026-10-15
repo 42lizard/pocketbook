@@ -33,7 +33,7 @@ def extract(archive, output, *members):
             raise ValueError(f'Firmware member missing or linked: {member}')
 
 
-def prepare(source, output):
+def prepare(source, output, runtime_test=False):
     if not shutil.which('7zz'):
         raise ValueError('Install 7-Zip with the 7zz executable')
     with source.open('rb') as stream:
@@ -50,6 +50,12 @@ def prepare(source, output):
             *[f'lib/libQt6{module}.so.6.8.2' for module in ('Core', 'Gui', 'Widgets', 'Network')],
             'lib/libstdc++.so.6.0.32', 'lib/libinkview.so', 'lib/libfreetype.so.6.20.1',
             'lib/libpng16.so.16.43.0', 'lib/libz.so.1.3.1')
+    if runtime_test:
+        for archive, destination, members in (
+                (output / 'rootfs.raw', output / 'rootfs', ['lib/*', 'usr/lib/*']),
+                (output / 'ebrmain/cramfs.img', output / 'runtime', ['lib/*']),
+                (output / 'ebrmain.raw', output / 'ebrmain', ['plugins/platforms/libqoffscreen.so'])):
+            subprocess.run(['7zz', 'x', '-y', str(archive), '-o' + str(destination), *members], check=True)
     print(output / 'runtime/lib')
 
 
@@ -57,5 +63,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('swupdate', type=Path)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--runtime-test', action='store_true', help='Also extract libraries and offscreen QPA for ARM tests')
     args = parser.parse_args()
-    prepare(args.swupdate, args.output)
+    prepare(args.swupdate, args.output, args.runtime_test)

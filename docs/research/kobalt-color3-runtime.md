@@ -145,18 +145,48 @@ on host Qt 6.8.2 as well. The PocketBook application subclass delegates these
 non-widget updates to the QGuiApplication path; QWidget receivers retain their
 normal compression. The public event-queue regression test fails before the
 change and verifies delivery of both updates afterward. The EPUB reopen test
-also passes. Device confirmation remains pending.
+also passes. The user subsequently confirmed successful startup on the device.
 
 The same device capture reports a 1404×1735 window on a 1404×1872 screen, with
-device pixel ratio 1. The reported small top-left interface therefore still
-needs a separate scaling check after startup is stable.
+device pixel ratio 1. The subsequent screenshot showed Android's logical-pixel
+start page at native pixel scale. The port now uses the native library as its
+entry point and the shared reader's display-sized opening view instead.
+
+## ARM EPUB rendering and native library entry
+
+The ARM workflow test reproduced a second failure with the extracted firmware
+Qt and C runtime: SIGBUS in CREngine's `newItem`, while capturing the first
+rendered page. GDB identified a `vst1.64 ... [r0 :128]` store to an address ending
+in `0x568`. `LVFontGlyphCacheItem` declares `alignas(16)` but its two allocation
+paths used `malloc`, which returned an address aligned to only eight bytes.
+`crengine-glyph-alignment.patch` makes both paths use `posix_memalign` with the
+structure's alignment. The same ARM test then passed: open, rendered page,
+page turn, close, reopen at the same position, and failed-open recovery.
+
+`apps/kobalt/tools/check_arm_runtime.py` runs this check under QEMU using the
+actual firmware loader, libc, Qt and offscreen QPA. Only hardware display, task
+and power calls are stubbed. A test image is written to
+`build/kobalt/arm-runtime-test/first-page.png`. It is not evidence that the
+PocketBook QPA or native task switching works on the physical device.
+Local before/after traces remain under `build/kobalt/arm-runtime/`.
+
+The firmware's EPUB association is
+`epub:@EPUB_file:1:eink-reader_with_blink.app,eink-reader_with_epub2.app:ICON_EPUB`.
+The registration helper appends `kobalt.app` while preserving existing user
+handlers and their order. This follows the native `extensions.cfg` format also
+used by [KOReader's PocketBook integration](https://github.com/koreader/koreader/blob/master/frontend/device/pocketbook/device.lua).
+The no-argument launcher uses the firmware's `/ebrmain/bin/bookshelf.app`.
+Successful reading calls InkView's `SetSubtaskInfo`, `BookReady` and `AddLastOpen`;
+the reader close action drains work and exits. Progress and bookmarks still
+use Kobalt storage; this is not complete parity with the Kobo integration.
 
 ## Remaining validation
 
 - Compare the completed port's imports and packaged dependency set to these
   exact libraries; a successful initial publication probe is not a full-reader check.
-- Device launch, EPUB opening, touch and page keys, local position persistence,
+- Device EPUB opening, touch and page keys, local position persistence,
   menus, color refresh, Home/exit, USB handling and suspend/wake remain runtime
   acceptance work.
-- Native library registration and Readest synchronization are separate from
-  the initial local-only reader port.
+- Native library registration and task return need physical acceptance.
+  PocketBook-native progress/annotation interoperability, frontlight, dictionary
+  integration and Readest synchronization remain separate work.

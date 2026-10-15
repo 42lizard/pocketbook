@@ -5,6 +5,9 @@ from pathlib import Path
 import zipfile
 
 LAUNCHER = b'''#!/bin/sh
+if [ "$#" -eq 0 ]; then
+    exec /ebrmain/bin/bookshelf.app
+fi
 root=/mnt/ext1/system/kobalt
 mkdir -p "$root"
 if [ -f "$root/app.log" ] && [ "$(wc -c < "$root/app.log")" -gt 65536 ]; then

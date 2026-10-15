@@ -56,6 +56,26 @@ Run the complete upstream regression suite with `--host --regression`. Use
 `--skip-dependencies` after dependencies and assets have been built. Dependency
 versions, checksums and CREngine patches use Kobalt's existing manifests.
 
+Also run the ARM workflow against the firmware runtime before device testing:
+
+```sh
+python3 apps/kobalt/tools/prepare_firmware.py \
+  build/kobalt/firmware-color3/SWUPDATE.BIN build/kobalt/firmware-prepared --runtime-test
+docker compose run --rm qt6 python3 external/kobalt/pocketbook/build.py \
+  --arm-test --firmware-libs /workspace/build/kobalt/firmware-prepared/runtime/lib --jobs 4
+docker compose run --rm qt6 python3 apps/kobalt/tools/check_arm_runtime.py \
+  build/kobalt/firmware-prepared
+python3 apps/kobalt/tests/test_registration.py
+```
+
+The SDK image includes `qemu-arm`; rebuild it after updating its Dockerfile.
+The test uses real ARM reader code, firmware Qt/libc and an offscreen platform
+plugin. InkView display, power and task calls are stubbed. It renders, turns a
+page, closes through the reader action and restores the position, including a
+filename with spaces and non-ASCII characters. The captured first page is in
+`build/kobalt/arm-runtime-test/first-page.png`. This does not validate the device's
+native QPA, touch, refresh or library task switching.
+
 ## Package
 
 ```sh
@@ -90,18 +110,30 @@ Connect the PB743K3 by USB. Extract the ZIP on the computer, then copy only
 `applications/kobalt.app` and `system/kobalt/` to the matching device paths.
 Merge directories; keep existing `config/`, fonts, diagnostics and other apps.
 For an update, keep a copy of the old launcher, binary and assets first.
-Safely eject and disconnect USB, then open **Kobalt** in Applications.
+Register the additional reader in the native library:
 
-Choose **Open EPUB**, select an unprotected local EPUB, turn pages and exit.
-The next launch offers the last book and restores its saved position.
+```sh
+python3 apps/kobalt/tools/register_reader.py /Volumes/PB743K3
+```
+
+This adds Kobalt to EPUB's **Open with** choices, preserving the current default
+and other associations. The first existing configuration is backed up as
+`system/config/extensions.cfg.before-kobalt`; repeated registration is harmless.
+Safely eject and disconnect USB. In the PocketBook library, long-press an
+unprotected EPUB and choose **Open with → Kobalt**. Starting Kobalt from
+Applications opens the native library. There is no separate Kobalt library or
+desktop file picker.
+
+Turn pages and exit; opening the same book restores its saved position.
 Hardware page keys and touchscreen page turns use the existing reader actions.
-Home exits after pending reading work drains. The reader's close action returns
-to its start screen. An EPUB path may also be passed to the launcher.
+Home and the reader's close action exit after pending reading work drains,
+allowing PocketBook to resume the previous task. An EPUB path may also be passed
+to the launcher. Successful opening updates InkView's task title and recent books.
 
 Kobalt stores its own progress, bookmarks, preferences and layout cache under
 `/mnt/ext1/system/kobalt/config`. Logs are in `app.log` with one bounded
 startup rotation; diagnostic files are under `diagnostics/`. It does not copy or
-modify PocketBook's reading database and does not register as the default reader.
+directly write PocketBook's reading database and does not become the default reader.
 
 Native-library progress/annotation integration and Readest sync are not part of
 this port. Automatic G-sensor rotation, in-app frontlight control, dictionary
@@ -112,3 +144,5 @@ rotation still need validation on the actual PB743K3.
 To remove the application, delete `applications/kobalt.app` and
 `system/kobalt/bin`, `assets`, and `notices`. Retain `config` if reading progress
 should survive reinstallation; deleting all of `system/kobalt` removes its data.
+Remove `kobalt.app` from the EPUB handler list in `system/config/extensions.cfg`.
+Do not restore the backup blindly if other associations have changed since installation.
