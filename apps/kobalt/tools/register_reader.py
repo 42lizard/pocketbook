@@ -66,7 +66,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('device', type=Path, help='Mounted PocketBook volume')
     args = parser.parse_args()
-    if not (args.device / 'applications/kobalt.app').is_file():
-        parser.error('Install Kobalt before registering it')
+    if not all((args.device / path).is_file() for path in ('applications/kobalt.app', 'system/bin/kobalt.app')):
+        parser.error('Install both Kobalt launchers (applications and system/bin) before registering it')
     install(args.device / 'system/config/extensions.cfg')
     print('Kobalt is available under Open with; the current default reader is preserved.')

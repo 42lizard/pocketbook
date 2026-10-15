@@ -94,6 +94,7 @@ compiled into the reader's About screen. The ZIP contains only:
 
 ```text
 applications/kobalt.app        launcher
+system/bin/kobalt.app          native library reader handler
 system/kobalt/bin/kobalt       ARM executable
 system/kobalt/assets/          fonts, hyphenation and manifest
 system/kobalt/notices/         license, acknowledgments and third-party notices
@@ -107,7 +108,7 @@ when distributing binaries. A checkout alone is not a complete source bundle.
 ## Install and try
 
 Connect the PB743K3 by USB. Extract the ZIP on the computer, then copy only
-`applications/kobalt.app` and `system/kobalt/` to the matching device paths.
+`applications/kobalt.app`, `system/bin/kobalt.app` and `system/kobalt/` to the matching device paths.
 Merge directories; keep existing `config/`, fonts, diagnostics and other apps.
 For an update, keep a copy of the old launcher, binary and assets first.
 Register the additional reader in the native library:
@@ -123,6 +124,9 @@ Safely eject and disconnect USB. In the PocketBook library, long-press an
 unprotected EPUB and choose **Open with → Kobalt**. Starting Kobalt from
 Applications opens the native library. There is no separate Kobalt library or
 desktop file picker.
+
+Both launcher files are required: the native library resolves reader handlers
+under `system/bin`, while the Applications screen uses `applications`.
 
 Turn pages and exit; opening the same book restores its saved position.
 Hardware page keys and touchscreen page turns use the existing reader actions.
@@ -141,7 +145,7 @@ installation and external browser launch are unavailable. Manual rotation uses
 InkView. Native keyboard, color refresh, suspend/wake, Home, USB handling and
 rotation still need validation on the actual PB743K3.
 
-To remove the application, delete `applications/kobalt.app` and
+To remove the application, delete `applications/kobalt.app`, `system/bin/kobalt.app` and
 `system/kobalt/bin`, `assets`, and `notices`. Retain `config` if reading progress
 should survive reinstallation; deleting all of `system/kobalt` removes its data.
 Remove `kobalt.app` from the EPUB handler list in `system/config/extensions.cfg`.

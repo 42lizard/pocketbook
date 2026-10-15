@@ -180,6 +180,30 @@ Successful reading calls InkView's `SetSubtaskInfo`, `BookReady` and `AddLastOpe
 the reader close action drains work and exits. Progress and bookmarks still
 use Kobalt storage; this is not complete parity with the Kobo integration.
 
+## Native library handler lookup
+
+The first library-entry package omitted `system/bin/kobalt.app`. Selecting
+Kobalt in **Open with** consequently never reached the launcher in
+`applications`, including after a reboot. An instrumented launcher produced no
+new entry, while the device's `handlers.cfg` recorded the Kobalt selection.
+
+Static inspection of the exact firmware's `libinkview.so` (SHA-256
+`dbb87acdfeb18e246adb2abc265bb04786e2bb3eacd30c43f617a39987f69d7c`)
+traced `OpenBook2` through `iv_OpenBook` at `0x42d70`. The multitasking launch
+branch at `0x438a0` constructs `/mnt/ext1/system/bin/<handler>`, checks execute
+access and falls back to `/ebrmain/bin/<handler>`. It does not use the
+Applications directory for this reader lookup. REA evidence:
+`ev_ecb92b7d2f48b19551b58a1713c1fddc6da7c217b81398c373ecc9fa38b195e1`.
+This is static control-flow evidence, not an observed successful device launch.
+The installed KOReader uses the same two-entry arrangement.
+
+The package now supplies an executable `system/bin/kobalt.app` that forwards
+all arguments to `applications/kobalt.app`. Registration refuses an installation
+missing either entry. The package regression failed on the missing handler
+before the fix and now checks its presence, executable mode, argument forwarding
+and exit status. The temporary diagnostic launcher is removed during the repair.
+Physical EPUB opening remains pending after this package correction.
+
 ## Remaining validation
 
 - Compare the completed port's imports and packaged dependency set to these

@@ -15,6 +15,9 @@ if [ -f "$root/app.log" ] && [ "$(wc -c < "$root/app.log")" -gt 65536 ]; then
 fi
 exec "$root/bin/kobalt" "$@" >> "$root/app.log" 2>&1
 '''
+READER_HANDLER = b'''#!/bin/sh
+exec /mnt/ext1/applications/kobalt.app "$@"
+'''
 
 
 def create(binary, assets, notices, output):
@@ -34,9 +37,10 @@ def create(binary, assets, notices, output):
         if path.is_symlink() or not path.is_file():
             raise ValueError(f'Not a regular package input: {path}')
     with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED) as archive:
-        entry = zipfile.ZipInfo('applications/kobalt.app')
-        entry.external_attr = 0o100755 << 16
-        archive.writestr(entry, LAUNCHER)
+        for name, content in [('applications/kobalt.app', LAUNCHER), ('system/bin/kobalt.app', READER_HANDLER)]:
+            entry = zipfile.ZipInfo(name)
+            entry.external_attr = 0o100755 << 16
+            archive.writestr(entry, content)
         for path, name in files:
             entry = zipfile.ZipInfo(name)
             entry.external_attr = (0o100755 if name.endswith('/bin/kobalt') else 0o100644) << 16

@@ -1,5 +1,7 @@
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -9,6 +11,26 @@ spec.loader.exec_module(registration)
 
 
 class RegistrationTest(unittest.TestCase):
+    def test_cli_requires_the_native_library_handler(self):
+        with tempfile.TemporaryDirectory() as directory:
+            device = Path(directory)
+            application = device / 'applications/kobalt.app'
+            application.parent.mkdir()
+            application.write_text('#!/bin/sh\n')
+            config = device / 'system/config/extensions.cfg'
+            config.parent.mkdir(parents=True)
+            command = [sys.executable, str(Path(registration.__file__)), str(device)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('system/bin', result.stderr)
+            self.assertFalse(config.exists())
+            handler = device / 'system/bin/kobalt.app'
+            handler.parent.mkdir()
+            handler.write_text('#!/bin/sh\n')
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('kobalt.app', config.read_text())
+
     def test_registration_preserves_default_other_readers_and_comments(self):
         before = '# personal\r\nepub:@EPUB_file:1:custom.app,eink-reader.app:ICON_EPUB\r\nfb2:Book:1:other.app:ICON_FB2\r\n'
         after = registration.register(before)
