@@ -13,7 +13,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def run(firmware, binary, output, qemu):
+def run(firmware, binary, output, qemu, without_network=False, book=None):
     firmware, binary, output = firmware.resolve(), binary.resolve(), output.resolve()
     libraries = [firmware / 'runtime/lib', firmware / 'rootfs/lib', firmware / 'rootfs/usr/lib']
     for directory in libraries:
@@ -39,7 +39,12 @@ def run(firmware, binary, output, qemu):
                  f'QT_PLUGIN_PATH={firmware / "ebrmain/plugins"}',
                  f'KOBALT_TEST_CAPTURE={output / "first-page.png"}']:
         command.extend(['-E', item])
+    if book:
+        command.extend(['-E', f'KOBALT_TEST_BOOK={book.resolve(strict=True)}'])
     command.append(str(binary))
+    if without_network:
+        # A fresh Linux network namespace has no configured loopback address.
+        command = ['unshare', '--net', '--', *command]
     subprocess.run(command, check=True, timeout=120)
 
 
@@ -49,5 +54,8 @@ if __name__ == '__main__':
     parser.add_argument('--binary', type=Path, default=ROOT / 'external/kobalt/build/pocketbook/arm/app/pocketbook-test')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/kobalt/arm-runtime-test')
     parser.add_argument('--qemu', default='qemu-arm')
+    parser.add_argument('--without-network', action='store_true',
+                        help='Run with no configured loopback or external network (requires CAP_SYS_ADMIN)')
+    parser.add_argument('--book', type=Path, help='Use a local EPUB instead of the generated fixture')
     args = parser.parse_args()
-    run(args.firmware, args.binary, args.output, args.qemu)
+    run(args.firmware, args.binary, args.output, args.qemu, args.without_network, args.book)

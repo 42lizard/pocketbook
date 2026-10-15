@@ -202,7 +202,44 @@ all arguments to `applications/kobalt.app`. Registration refuses an installation
 missing either entry. The package regression failed on the missing handler
 before the fix and now checks its presence, executable mode, argument forwarding
 and exit status. The temporary diagnostic launcher is removed during the repair.
-Physical EPUB opening remains pending after this package correction.
+The subsequent device run reached Kobalt's opening view and failure dialog,
+confirming that the corrected library handler launched the reader.
+
+## Reading without an IP loopback interface
+
+The next device log recorded `pocketbook-book-requested`, followed by
+`native-resource-failed` with stage `loopback-listen` and Qt socket error 9.
+The publication had passed inspection; the localhost resource listener failed
+before rendering. The PocketBook adapter's loopback setup stub returns
+`ENOTSUP`, so the shared TCP transport had assumed a configured loopback address.
+
+The real ARM workflow reproduced the failed open in a fresh Linux network
+namespace (`unshare --net`), where loopback has no address. The test now reports
+an opening failure immediately, reducing this negative check to 2.27 seconds.
+`check_arm_runtime.py --without-network` retains this environment as a regression
+check; `--book PATH` exercises a supplied local EPUB with the same workflow.
+
+PocketBook now selects `QLocalServer`/`QLocalSocket` for the shared resource
+protocol. Its Linux abstract socket name contains the process ID and an opening
+counter; it does not expose the authentication secret. Existing authentication,
+limits, cancellation and drain ordering are retained. The socket disappears
+with the process and needs neither network configuration nor elevated rights.
+Other targets retain their loopback TCP transport. See Qt's
+[local server options](https://doc.qt.io/qt-6.8/qlocalserver.html#SocketOption-enum)
+and [local socket options](https://doc.qt.io/qt-6.8/qlocalsocket.html#SocketOption-enum).
+
+The same isolated-network ARM workflow passed after the change (8.88 seconds).
+Two existing device EPUBs also passed opening, page turn, close and restored
+position under the exact firmware runtime (13.89 and 23.55 seconds). Books and
+captures remain private local test inputs under `build/kobalt/epub-open-debug/`.
+The new executable's 13 direct libraries and 1,678 strong imports match the
+firmware. These checks do not establish physical display/input acceptance.
+
+The full host regression passed 72 of 73 targets. `reader-window` failed its
+existing `closeWithPendingBookmark` timing assertion, including an isolated
+rerun (97 cases passed, one failed, two skipped). The same assertion also fails
+in the saved baseline build without this transport change. This remains a
+known test limitation; the suite is not reported as fully passing.
 
 ## Remaining validation
 

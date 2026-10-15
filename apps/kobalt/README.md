@@ -63,8 +63,8 @@ python3 apps/kobalt/tools/prepare_firmware.py \
   build/kobalt/firmware-color3/SWUPDATE.BIN build/kobalt/firmware-prepared --runtime-test
 docker compose run --rm qt6 python3 external/kobalt/pocketbook/build.py \
   --arm-test --firmware-libs /workspace/build/kobalt/firmware-prepared/runtime/lib --jobs 4
-docker compose run --rm qt6 python3 apps/kobalt/tools/check_arm_runtime.py \
-  build/kobalt/firmware-prepared
+docker compose run --rm --cap-add SYS_ADMIN qt6 python3 apps/kobalt/tools/check_arm_runtime.py \
+  build/kobalt/firmware-prepared --without-network
 python3 apps/kobalt/tests/test_registration.py
 ```
 
@@ -75,6 +75,12 @@ page, closes through the reader action and restores the position, including a
 filename with spaces and non-ASCII characters. The captured first page is in
 `build/kobalt/arm-runtime-test/first-page.png`. This does not validate the device's
 native QPA, touch, refresh or library task switching.
+
+The isolated network check leaves loopback unconfigured, matching the device
+failure that previously stopped opening at `loopback-listen`. PocketBook now
+uses local Unix sockets for EPUB resource transfer. `SYS_ADMIN` is needed only
+to create the test's network namespace; the reader needs no elevated rights.
+Pass `--book PATH` to run the same check with a local EPUB instead of the fixture.
 
 ## Package
 
