@@ -8,7 +8,9 @@ The port reuses [Nico Verbruggen's Kobalt](https://github.com/nicoverbruggen/kob
 through [42lizard's fork](https://github.com/42lizard/kobalt/tree/pocketbook-port)
 in `external/kobalt`. CREngine, the reading interface, settings, bookmarks and
 local state remain upstream components. A small PocketBook host replaces Kobo
-integration. This is a development build; physical-device acceptance is pending.
+integration. Startup and EPUB opening have been confirmed on the device with
+fork commit `6de0711`. The subsequent upstream synchronization and the remaining
+display, input and lifecycle behavior still need physical-device acceptance.
 
 ## Build and verify
 
@@ -78,7 +80,8 @@ native QPA, touch, refresh or library task switching.
 
 The isolated network check leaves loopback unconfigured, matching the device
 failure that previously stopped opening at `loopback-listen`. PocketBook now
-uses local Unix sockets for EPUB resource transfer. `SYS_ADMIN` is needed only
+reads EPUB resources directly from the ZIP through the shared upstream reader.
+`SYS_ADMIN` is needed only
 to create the test's network namespace; the reader needs no elevated rights.
 Pass `--book PATH` to run the same check with a local EPUB instead of the fixture.
 

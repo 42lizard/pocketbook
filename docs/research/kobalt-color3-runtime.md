@@ -219,7 +219,7 @@ an opening failure immediately, reducing this negative check to 2.27 seconds.
 `check_arm_runtime.py --without-network` retains this environment as a regression
 check; `--book PATH` exercises a supplied local EPUB with the same workflow.
 
-PocketBook now selects `QLocalServer`/`QLocalSocket` for the shared resource
+Fork commit `6de0711` selected `QLocalServer`/`QLocalSocket` for the shared resource
 protocol. Its Linux abstract socket name contains the process ID and an opening
 counter; it does not expose the authentication secret. Existing authentication,
 limits, cancellation and drain ordering are retained. The socket disappears
@@ -241,11 +241,60 @@ rerun (97 cases passed, one failed, two skipped). The same assertion also fails
 in the saved baseline build without this transport change. This remains a
 known test limitation; the suite is not reported as fully passing.
 
+The user subsequently confirmed that this installed version opened an EPUB on
+the InkPad. Its package, `Kobalt-PB743K3-local-socket.zip`, has SHA-256
+`22b7e813c0288501eb30bdbc44ebc1265a57d084acd9747678dcbd549875735c`.
+
+## Upstream synchronization
+
+Upstream `f2268b52c125cf65646f7b93f250d00901378324` adds 66 commits since the
+fork point, including direct local EPUB resource access. The shared controller
+now uses `openLocalPublication`, which inspects the archive and reads bounded
+ZIP streams on the engine worker. The PocketBook-only local socket adapter is
+therefore removed. The source lease, resource limits, cancellation and drain
+ordering are supplied by the upstream implementation.
+
+The merge retains PocketBook launch, InkView integration, glyph alignment and
+Qt 6.8 compatibility changes. Integration adjustments cover the standalone
+font library, sensor-free orientation and dependency caching with system PNG
+and explicit cross-compiler configuration. The installed, device-confirmed
+`6de0711` package remains separate from this synchronized build.
+
+Host and isolated-network ARM workflows pass with the fixture and both device
+books. The workflow now waits for `ReaderWindow::readyForPresentation()` rather
+than a fixed 300 ms delay: with the larger book, the old test captured the
+temporary "Updating page layout" overlay as its expected page. Saved before/
+after-turn/reopened images established that race; the corrected comparison
+still requires a changed page after PageDown and identical content on reopen.
+
+For reference, complete ARM workflow times were 8.88/8.71 seconds for the
+fixture, 13.89/15.04 seconds for the first device book and 23.55/24.11 seconds
+for the second, before/after synchronization. These use the same EPUBs, fresh
+profiles, Release ARM softfp configuration, firmware Qt/libc, QEMU offscreen
+display and isolated network namespace. They include two openings, a page turn,
+shutdown, image comparisons and failure recovery. The readiness change and
+varying host build load prevent attributing the differences to ZIP access or
+claiming a speedup. Peak memory and native paint/refresh counts were not measured;
+these runs do not establish physical-device performance.
+
+The synchronized executable passes firmware checks with 13 direct libraries
+and 1,653 strong imports. The 117-file package includes upstream's ten additional
+hyphenation patterns and is retained locally as
+`Kobalt-PB743K3-upstream-f2268b5.zip` (SHA-256
+`8fbdc5496e72d731a38f0baf04dec2f3d0be6e82487c8b1a9cd6286aff9474d4`).
+It has not replaced the confirmed build on the reader.
+
+The synchronized full host suite passes all 107 test groups in 258.56 seconds,
+including the reader-window groups. All six package/registration tests, the UI
+architecture check and the 379-file C++ formatting check pass. Follow-up
+Standards and Spec reviews report no source-level findings. Physical acceptance
+of this synchronized build remains outstanding.
+
 ## Remaining validation
 
-- Compare the completed port's imports and packaged dependency set to these
-  exact libraries; a successful initial publication probe is not a full-reader check.
-- Device EPUB opening, touch and page keys, local position persistence,
+- Validate the synchronized build on the device; its imports and emulated
+  workflows pass, while the preceding `6de0711` build has confirmed EPUB opening.
+- Touch and page keys, local position persistence,
   menus, color refresh, Home/exit, USB handling and suspend/wake remain runtime
   acceptance work.
 - Native library registration and task return need physical acceptance.
