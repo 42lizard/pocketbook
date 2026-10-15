@@ -282,13 +282,32 @@ and 1,653 strong imports. The 117-file package includes upstream's ten additiona
 hyphenation patterns and is retained locally as
 `Kobalt-PB743K3-upstream-f2268b5.zip` (SHA-256
 `8fbdc5496e72d731a38f0baf04dec2f3d0be6e82487c8b1a9cd6286aff9474d4`).
-It has not replaced the confirmed build on the reader.
+It was subsequently installed on the connected reader after the history rebase
+described below. All 117 package files match the archive; hashes of Kobalt user
+state and native reader associations remain unchanged. Replaced files and logs
+are backed up locally under `build/kobalt/epub-open-debug/before-upstream/`.
 
 The synchronized full host suite passes all 107 test groups in 258.56 seconds,
 including the reader-window groups. All six package/registration tests, the UI
 architecture check and the 379-file C++ formatting check pass. Follow-up
 Standards and Spec reviews report no source-level findings. Physical acceptance
 of this synchronized build remains outstanding.
+
+## Linear port history
+
+At the user's request, the port was rebased onto upstream `f2268b5` as six
+linear commits, ending at `1a17e2f`. There are no merge commits in the port delta.
+The obsolete socket workaround is omitted; the upstream integration adjustments
+remain in the final commit. Both `1a17e2f` and the previously tested `6ecab6a`
+have tree `3aa5ea8079d53b4146f0f7e3d047406e046cdb29`, so source and packaged binary
+are unchanged by the history rewrite. The 107-test result applies to this exact
+tree; no additional full test run was needed for the rebase.
+
+Non-release archive tags preserve both histories on the fork:
+`archive/pocketbook-pre-rebase-20261015` and
+`archive/pocketbook-device-confirmed-20261015`. The published port branch was
+updated with a lease pinned to its previous exact commit. Future upstream
+updates should use rebases to keep the port suitable for upstream review.
 
 ## Remaining validation
 

@@ -12,6 +12,15 @@ integration. Startup and EPUB opening have been confirmed on the device with
 fork commit `6de0711`. The subsequent upstream synchronization and the remaining
 display, input and lifecycle behavior still need physical-device acceptance.
 
+## Fork maintenance
+
+Keep the fork's `main` aligned with upstream. Rebase `pocketbook-port` onto new
+upstream revisions instead of merging them, preserving a linear patch series
+for a future upstream contribution. Before rewriting published history, archive
+device-confirmed and tested source revisions, use an explicit force-with-lease,
+and update this repository's submodule pin. The current rebased port is `1a17e2f`;
+its source tree matches the fully tested pre-rebase revision `6ecab6a` exactly.
+
 ## Build and verify
 
 From the parent repository root, initialize the submodule and build the SDK image:
