@@ -309,6 +309,40 @@ Non-release archive tags preserve both histories on the fork:
 updated with a lease pinned to its previous exact commit. Future upstream
 updates should use rebases to keep the port suitable for upstream review.
 
+## Standalone fork buildchain
+
+Fork commit `c1e884e` now owns the PocketBook SDK recipe, firmware preparation, ABI/runtime
+checks, packaging, registration and Python tests. Its root `build-pocketbook.sh`
+uses the existing Kobalt container-engine, dependency, font and provenance
+helpers. The parent repository only pins the fork and links its instructions.
+Duplicate parent helpers were removed. Existing monorepo CMake outputs must be
+moved aside once because the container source mount changed to `/work`.
+
+Validation used an independent clone with no compiled outputs, mounting only
+the fork checkout and the separately supplied, checksum-verified firmware file.
+The SDK image was built from the fork's recipe. Pinned dependency archives and
+font inputs were reused, then ARM and host dependencies were compiled afresh.
+The full standalone command passed, including all ten Python tooling checks,
+the host EPUB workflow and the exact-firmware ARM workflow with no IP network.
+The final ARM workflow took 6.259 seconds; this is not device startup timing.
+All 13 direct libraries and 1,653 strong imports match the firmware. The full
+host regression suite passed all 108 groups in 213.24 seconds.
+
+The normal command also passed from clean commit `c1e884e`, without
+`--allow-dirty`; its provenance record reports `dirty: false`. The 117-file ZIP
+has SHA-256 `06c582119d9d5a151c29f5400b7343dedb93dc1a634a426f3317264a632a1e13`.
+The generated ZIP remains 31 MiB and excludes firmware and user data. A source
+change during the build fails validation before replacing a prior verified ZIP;
+the regression was checked against the faulty early-publication behavior.
+Firmware inputs are reused only after checksum verification; a corruption test
+checks re-extraction. Standards and Spec reviews have no open findings.
+
+This validates Docker on an ARM64 host. The pinned SDK image also supplies
+AMD64, but AMD64 and Podman builds have not been exercised. Kobo build entry
+points were unchanged; no full Kobo cross-build was run. This tooling change
+does not install a new device package or change the pending physical acceptance
+status below. See the fork's `pocketbook/README.md` for commands and outputs.
+
 ## Remaining validation
 
 - Validate the synchronized build on the device; its imports and emulated
